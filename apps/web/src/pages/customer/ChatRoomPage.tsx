@@ -6,6 +6,7 @@ import { ref, onValue, push, set, DataSnapshot } from 'firebase/database';
 import { useAuthStore } from '../../stores/authStore';
 import PaymentRequestBubble from '../../components/organisms/PaymentRequestBubble';
 import ReceiptBubble from '../../components/organisms/ReceiptBubble';
+import InvoiceSheet from '../../components/organisms/InvoiceSheet';
 
 interface ChatMessage {
   key: string;
@@ -22,6 +23,8 @@ export default function ChatRoomPage() {
   const [loading, setLoading] = useState(true);
   const [shopName, setShopName] = useState('');
   const [text, setText] = useState('');
+  const [roomData, setRoomData] = useState<any>(null);
+  const [showInvoiceSheet, setShowInvoiceSheet] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { user } = useAuthStore();
   const navigate = useNavigate();
@@ -33,7 +36,10 @@ export default function ChatRoomPage() {
     const roomMetaRef = ref(database, `/chatrooms/${roomId}`);
     onValue(roomMetaRef, (snap: DataSnapshot) => {
       const data = snap.val();
-      if (data?.shopName) setShopName(data.shopName);
+      if (data) {
+        setRoomData(data);
+        if (data.shopName) setShopName(data.shopName);
+      }
     }, { onlyOnce: true });
 
     // Listen to messages
@@ -166,6 +172,15 @@ export default function ChatRoomPage() {
       {/* Input */}
       <div className="px-4 pb-8 pt-2 border-t border-surface-border bg-surface">
         <div className="flex gap-2">
+          {(user?.role === 'merchant' || user?.role === 'both') && (
+            <button
+              id="chat-request-payment-btn"
+              onClick={() => setShowInvoiceSheet(true)}
+              className="px-4 py-3 bg-teal-600/10 hover:bg-teal-600/20 text-teal-400 font-medium rounded-2xl transition-all active:scale-95 shrink-0 flex items-center justify-center border border-teal-500/20 animate-fade-in"
+            >
+              Request ₹
+            </button>
+          )}
           <input
             type="text"
             placeholder="Type a message..."
@@ -184,6 +199,15 @@ export default function ChatRoomPage() {
           </button>
         </div>
       </div>
+
+      {showInvoiceSheet && (
+        <InvoiceSheet
+          onClose={() => setShowInvoiceSheet(false)}
+          chatRoomId={roomId}
+          customerId={roomData?.customerId}
+        />
+      )}
     </div>
   );
 }
+

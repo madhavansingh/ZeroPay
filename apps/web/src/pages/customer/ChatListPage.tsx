@@ -111,7 +111,7 @@ export default function ChatListPage() {
         <button
           id="fab-scan-qr"
           onClick={() => navigate('/customer/scan')}
-          className="fixed bottom-8 right-6 btn-primary flex items-center gap-2 shadow-2xl shadow-teal-600/30"
+          className="fixed bottom-24 right-6 btn-primary flex items-center gap-2 shadow-2xl shadow-teal-600/30"
         >
           + New Payment
         </button>

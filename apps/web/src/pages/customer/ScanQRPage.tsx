@@ -1,52 +1,73 @@
 import { useNavigate } from 'react-router-dom';
-import { QrCode, Camera } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import QrScanner from 'qr-scanner';
 
-// Minimal QR scan — uses native browser camera + manual input fallback
 export default function ScanQRPage() {
   const [manualInput, setManualInput] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const qrScannerRef = useRef<QrScanner | null>(null);
 
-  // Try to start camera
   useEffect(() => {
-    const startCamera = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
-        });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          streamRef.current = stream;
+    const video = videoRef.current;
+    if (!video) return;
+
+    const qrScanner = new QrScanner(
+      video,
+      (result) => {
+        const decodedText = result.data;
+        if (decodedText) {
+          handleDecodedQR(decodedText);
         }
-      } catch {
-        // Camera not available — show manual input
+      },
+      {
+        highlightScanRegion: true,
+        highlightCodeOutline: true,
       }
-    };
-    startCamera();
+    );
+
+    qrScanner.start().catch((err) => {
+      console.error('Failed to start QR scanner:', err);
+      setError('Could not access camera. Please enter manually.');
+    });
+
+    qrScannerRef.current = qrScanner;
+
     return () => {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+      qrScanner.destroy();
     };
   }, []);
 
-  const handleManualNavigate = () => {
-    const input = manualInput.trim();
-    if (!input) return;
+  const handleDecodedQR = (input: string) => {
+    const trimmed = input.trim();
+    if (!trimmed) return;
 
-    // Support both full URL and just merchantId/invoiceId
-    if (input.includes('/customer/pay/') || input.includes('/receipt/')) {
+    // Stop scanning once decoded
+    qrScannerRef.current?.stop();
+
+    if (trimmed.includes('/customer/pay/') || trimmed.includes('/receipt/')) {
       try {
-        const url = new URL(input);
-        navigate(url.pathname);
+        const url = new URL(trimmed);
+        navigate(url.pathname + url.search);
       } catch {
-        navigate(`/customer/pay/${input}`);
+        const payIndex = trimmed.indexOf('/customer/pay/');
+        const receiptIndex = trimmed.indexOf('/receipt/');
+        if (payIndex !== -1) {
+          navigate(trimmed.substring(payIndex));
+        } else if (receiptIndex !== -1) {
+          navigate(trimmed.substring(receiptIndex));
+        } else {
+          navigate(`/customer/pay/${trimmed}`);
+        }
       }
     } else {
-      // Treat as merchantId or invoiceId
-      navigate(`/customer/pay/${input}`);
+      navigate(`/customer/pay/${trimmed}`);
     }
+  };
+
+  const handleManualNavigate = () => {
+    handleDecodedQR(manualInput);
   };
 
   return (
@@ -99,8 +120,9 @@ export default function ScanQRPage() {
             Go
           </button>
         </div>
-        {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
+        {error && <p className="text-red-400 text-sm mt-2 text-center">{error}</p>}
       </div>
     </div>
   );
 }
+

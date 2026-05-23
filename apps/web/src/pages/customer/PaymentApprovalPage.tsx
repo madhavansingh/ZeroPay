@@ -1,9 +1,12 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
-import { ArrowLeft, Shield, CheckCircle, AlertCircle } from 'lucide-react';
-import { getInvoice, buildTx, submitTx } from '../../services/api';
+import { useState, useEffect } from 'react';
+import { ArrowLeft, Shield, CheckCircle, AlertCircle, Loader, ExternalLink } from 'lucide-react';
+import { getInvoice, buildTx, submitTx, createChatRoom } from '../../services/api';
 import StatusBadge from '../../components/atoms/StatusBadge';
+import { database } from '../../services/firebase';
+import { ref, onValue } from 'firebase/database';
+import type { InvoiceStatus } from '@zeropay/shared-types';
 
 // CIP-30 type definitions
 interface CardanoApi {
@@ -12,7 +15,6 @@ interface CardanoApi {
   signTx(tx: string, partialSign?: boolean): Promise<string>;
   submitTx(tx: string): Promise<string>;
 }
-
 
 async function getFirstAvailableWallet(): Promise<CardanoApi> {
   const walletKeys = ['eternl', 'lace', 'nami', 'flint', 'vespr', 'begin'];
@@ -32,17 +34,56 @@ export default function PaymentApprovalPage() {
   const [step, setStep] = useState<PayStep>('review');
   const [txHash, setTxHash] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [liveStatus, setLiveStatus] = useState<InvoiceStatus | null>(null);
 
   // merchantId could be an invoiceId
   const isInvoiceId = merchantId?.startsWith('INV-');
 
+  // 1. Redirection for static merchant QR codes (merchantStringId instead of invoiceId)
+  useEffect(() => {
+    if (merchantId && !isInvoiceId) {
+      createChatRoom({ merchantStringId: merchantId })
+        .then((res) => {
+          if (res.success && res.data?.roomId) {
+            navigate(`/customer/chats/${res.data.roomId}`, { replace: true });
+          } else {
+            setErrorMsg(res.error ?? 'Failed to open chat room');
+            setStep('error');
+          }
+        })
+        .catch((err) => {
+          setErrorMsg(err instanceof Error ? err.message : 'Failed to open chat room');
+          setStep('error');
+        });
+    }
+  }, [merchantId, isInvoiceId, navigate]);
+
   const { data: invoiceRes, isLoading } = useQuery({
     queryKey: ['invoice', merchantId],
     queryFn: () => getInvoice(merchantId!),
-    enabled: !!merchantId,
+    enabled: !!merchantId && isInvoiceId,
   });
 
   const invoice = invoiceRes?.data;
+
+  // 2. Real-time Firebase RTDB listener for status
+  useEffect(() => {
+    if (!isInvoiceId || !merchantId) return;
+
+    if (invoice?.status) {
+      setLiveStatus(invoice.status);
+    }
+
+    const statusRef = ref(database, `/invoices/${merchantId}`);
+    const unsubscribe = onValue(statusRef, (snap) => {
+      const status = snap.val();
+      if (status) {
+        setLiveStatus(status as InvoiceStatus);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [merchantId, isInvoiceId, invoice?.status]);
 
   const handlePay = async () => {
     if (!invoice?.invoiceId) return;
@@ -87,24 +128,131 @@ export default function PaymentApprovalPage() {
     );
   }
 
-  if (step === 'submitted') {
+  const currentStatus = liveStatus || invoice?.status || 'pending';
+  const isPending = currentStatus === 'pending';
+  const showStepper = step === 'submitted' || !isPending;
+
+  // Render visual stepper when transaction has been submitted
+  if (showStepper) {
+    const isStep1Done = currentStatus !== 'pending';
+    
+    const isStep2Active = currentStatus === 'submitted' || currentStatus === 'confirming';
+    const isStep2Done = currentStatus === 'confirmed' || currentStatus === 'settled';
+    
+    const isStep3Active = currentStatus === 'confirmed';
+    const isStep3Done = currentStatus === 'settled';
+
     return (
       <div className="min-h-screen bg-surface flex flex-col items-center justify-center px-6 animate-fade-in">
         <div className="w-full max-w-sm text-center">
-          <div className="w-24 h-24 rounded-full bg-status-confirmed/10 flex items-center justify-center mx-auto mb-6">
-            <CheckCircle size={48} className="text-status-confirmed" />
-          </div>
-          <h1 className="text-2xl font-bold mb-2">Payment Submitted!</h1>
-          <p className="text-text-secondary mb-6">
-            Your transaction is being confirmed on the Cardano blockchain. You'll be notified when complete.
+          {isStep3Done ? (
+            <div className="w-24 h-24 rounded-full bg-teal-500/10 flex items-center justify-center mx-auto mb-6 animate-bounce">
+              <CheckCircle size={48} className="text-teal-400" />
+            </div>
+          ) : (
+            <div className="w-24 h-24 rounded-full bg-teal-600/10 flex items-center justify-center mx-auto mb-6">
+              <Loader size={48} className="text-teal-400 animate-spin" />
+            </div>
+          )}
+
+          <h1 className="text-2xl font-bold mb-2">
+            {isStep3Done ? 'Payment Settled!' : 'Verifying Payment...'}
+          </h1>
+          <p className="text-text-secondary mb-8">
+            {isStep3Done 
+              ? 'Your Cardano payment has been settled and receipt generated.'
+              : 'Please wait while we verify your transaction on the Cardano blockchain.'}
           </p>
-          <div className="card mb-6 text-left">
-            <p className="text-text-muted text-xs mb-1">Transaction Hash</p>
-            <p className="font-mono text-xs text-text-secondary break-all">{txHash}</p>
+
+          {/* Real-time Web3 Stepper */}
+          <div className="card text-left space-y-6 mb-8 bg-surface-card border border-surface-border">
+            {/* Step 1 */}
+            <div className="flex items-center gap-4">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                isStep1Done ? 'bg-teal-600 text-white' : 'bg-surface-elevated text-text-secondary'
+              }`}>
+                {isStep1Done ? '✓' : '1'}
+              </div>
+              <div>
+                <p className="font-semibold text-sm">Transaction Broadcasted</p>
+                <p className="text-xs text-text-secondary">Sent successfully to Cardano network</p>
+              </div>
+            </div>
+
+            {/* Step 2 */}
+            <div className="flex items-center gap-4">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                isStep2Done 
+                  ? 'bg-teal-600 text-white' 
+                  : isStep2Active 
+                    ? 'border-2 border-teal-500 text-teal-400 animate-pulse' 
+                    : 'bg-surface-elevated text-text-secondary'
+              }`}>
+                {isStep2Done ? '✓' : '2'}
+              </div>
+              <div>
+                <p className="font-semibold text-sm">Blockchain Confirmation</p>
+                <p className="text-xs text-text-secondary">
+                  {isStep2Active ? 'Waiting for block confirmations...' : isStep2Done ? 'Confirmed in block' : 'Pending confirmations'}
+                </p>
+              </div>
+            </div>
+
+            {/* Step 3 */}
+            <div className="flex items-center gap-4">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                isStep3Done 
+                  ? 'bg-teal-600 text-white' 
+                  : isStep3Active 
+                    ? 'border-2 border-teal-500 text-teal-400 animate-pulse' 
+                    : 'bg-surface-elevated text-text-secondary'
+              }`}>
+                {isStep3Done ? '✓' : '3'}
+              </div>
+              <div>
+                <p className="font-semibold text-sm">Receipt & Settlement</p>
+                <p className="text-xs text-text-secondary">
+                  {isStep3Active ? 'Pinning receipt to IPFS...' : isStep3Done ? 'Receipt generated & settled' : 'Pending settlement'}
+                </p>
+              </div>
+            </div>
           </div>
-          <button id="payment-done-btn" onClick={() => navigate('/customer/chats')} className="btn-primary w-full">
-            Back to Chats
-          </button>
+
+          {txHash && (
+            <div className="card mb-6 text-left bg-surface-card border border-surface-border">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-text-muted text-xs">Transaction Hash</span>
+                <a 
+                  href={`https://preprod.cardanoscan.io/transaction/${txHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-teal-400 hover:text-teal-300 flex items-center gap-1 transition-colors"
+                >
+                  <ExternalLink size={10} /> Explorer
+                </a>
+              </div>
+              <p className="font-mono text-xs text-text-secondary break-all">{txHash}</p>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-2">
+            {isStep3Done && invoice && (
+              <button
+                id="payment-receipt-btn"
+                onClick={() => navigate(`/receipt/${invoice.invoiceId}`)}
+                className="btn-primary w-full"
+              >
+                View Receipt
+              </button>
+            )}
+            <button 
+              id="payment-done-btn" 
+              onClick={() => navigate('/customer/chats')} 
+              className={isStep3Done ? "btn-secondary w-full" : "btn-primary w-full"}
+            >
+              Back to Chats
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -152,7 +300,7 @@ export default function PaymentApprovalPage() {
             {(
               [
                 { label: 'Invoice', value: invoice.invoiceId, mono: true },
-                { label: 'Status', node: <StatusBadge status={invoice.status} /> },
+                { label: 'Status', node: <StatusBadge status={currentStatus} /> },
                 invoice.description ? { label: 'Description', value: invoice.description } : null,
                 { label: 'To', value: `${invoice.paymentAddress?.slice(0, 12)}...${invoice.paymentAddress?.slice(-6)}`, mono: true },
               ] as Array<{ label: string; value?: string; mono?: boolean; node?: React.ReactNode } | null>
@@ -180,7 +328,7 @@ export default function PaymentApprovalPage() {
           <button
             id="confirm-pay-btn"
             onClick={handlePay}
-            disabled={step === 'signing' || invoice.status !== 'pending'}
+            disabled={step === 'signing' || currentStatus !== 'pending'}
             className="btn-primary w-full mt-2"
           >
             {step === 'signing' ? (
@@ -188,8 +336,8 @@ export default function PaymentApprovalPage() {
                 <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 Waiting for wallet...
               </span>
-            ) : invoice.status !== 'pending' ? (
-              `Invoice is ${invoice.status}`
+            ) : currentStatus !== 'pending' ? (
+              `Invoice is ${currentStatus}`
             ) : (
               `Pay ₹${(invoice.amountPaise / 100).toFixed(2)} via Cardano`
             )}
@@ -204,3 +352,4 @@ export default function PaymentApprovalPage() {
     </div>
   );
 }
+

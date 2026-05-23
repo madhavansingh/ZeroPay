@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import QRCode from 'react-qr-code';
@@ -20,6 +20,7 @@ export default function CounterCheckoutPage() {
     adaInrRate: number;
     expiresAt: string;
   } | null>(null);
+  const [timeLeft, setTimeLeft] = useState(0);
 
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -29,6 +30,19 @@ export default function CounterCheckoutPage() {
     queryFn: () => getAdaInrRate(),
     refetchInterval: 60_000,
   });
+
+  useEffect(() => {
+    if (!invoiceData) return;
+
+    const update = () => {
+      const left = Math.max(0, Math.floor((new Date(invoiceData.expiresAt).getTime() - Date.now()) / 1000));
+      setTimeLeft(left);
+    };
+
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [invoiceData]);
 
   const amountInr = parseFloat(amountStr) || 0;
   const amountPaise = Math.round(amountInr * 100);
@@ -63,7 +77,7 @@ export default function CounterCheckoutPage() {
 
   if (invoiceData) {
     const deepLink = `${window.location.origin}/customer/pay/${invoiceData.invoiceId}`;
-    const timeLeft = Math.max(0, Math.floor((new Date(invoiceData.expiresAt).getTime() - Date.now()) / 1000));
+    const isExpired = timeLeft === 0;
 
     return (
       <div className="min-h-screen bg-surface flex flex-col items-center justify-center px-6 py-10 animate-fade-in">
@@ -80,7 +94,7 @@ export default function CounterCheckoutPage() {
             </p>
           </div>
 
-          <div className="bg-white rounded-3xl p-6 flex items-center justify-center mb-4">
+          <div className={`bg-white rounded-3xl p-6 flex items-center justify-center mb-4 transition-opacity duration-300 ${isExpired ? 'opacity-40' : ''}`}>
             <QRCode
               value={deepLink}
               size={220}
@@ -93,12 +107,18 @@ export default function CounterCheckoutPage() {
           <div className="card text-center mb-6">
             <p className="text-text-muted text-xs font-mono">{invoiceData.invoiceId}</p>
             <p className="text-text-secondary text-sm mt-1">
-              Expires in <span className="text-status-pending font-medium">{Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}</span>
+              {isExpired ? (
+                <span className="text-red-400 font-semibold">QR Code Expired</span>
+              ) : (
+                <>
+                  Expires in <span className="text-status-pending font-medium">{Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}</span>
+                </>
+              )}
             </p>
           </div>
 
           <p className="text-text-muted text-xs text-center">
-            Customer scans the QR code with their ZeroPay app to pay
+            {isExpired ? 'Please go back and generate a new checkout QR code.' : 'Customer scans the QR code with their ZeroPay app to pay'}
           </p>
         </div>
       </div>
