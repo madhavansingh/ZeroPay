@@ -1,0 +1,27 @@
+{
+  "name": "zeropay",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "apps/mobile",
+    "backend",
+    "packages/shared-types"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:web\"",
+    "build:web": "npm run build --workspace=apps/web",
+    "build:backend": "npm run build --workspace=backend",
+    "type-check": "npm run type-check --workspace=backend && npm run type-check --workspace=apps/web",
+    "lint": "npm run lint --workspace=backend && npm run lint --workspace=apps/web"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=9.0.0"
+  }
+}

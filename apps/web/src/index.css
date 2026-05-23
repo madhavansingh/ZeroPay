@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html {
+    @apply bg-surface text-text-primary;
+  }
+
+  body {
+    @apply font-sans;
+    min-height: 100dvh;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-surface-border rounded-full; }
+
+  /* Checkmark animation */
+  .checkmark-path {
+    stroke-dasharray: 48;
+    stroke-dashoffset: 48;
+    animation: checkmark 0.4s ease-out 0.1s forwards;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white
+           font-semibold px-6 py-3 rounded-2xl transition-all duration-150
+           disabled:opacity-40 disabled:cursor-not-allowed
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500;
+  }
+
+  .btn-secondary {
+    @apply bg-surface-elevated hover:bg-surface-border text-text-primary
+           font-semibold px-6 py-3 rounded-2xl transition-all duration-150
+           disabled:opacity-40 disabled:cursor-not-allowed
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500;
+  }
+
+  .btn-ghost {
+    @apply text-teal-400 hover:text-teal-300 font-medium px-4 py-2
+           rounded-xl transition-colors duration-150;
+  }
+
+  .card {
+    @apply bg-surface-card border border-surface-border rounded-3xl p-4;
+  }
+
+  .card-elevated {
+    @apply bg-surface-elevated border border-surface-border rounded-3xl p-4;
+  }
+
+  .input {
+    @apply bg-surface-elevated border border-surface-border rounded-2xl px-4 py-3
+           text-text-primary placeholder-text-muted w-full
+           focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600
+           transition-colors duration-150;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+
+  .amount-inr {
+    @apply font-sans font-bold;
+  }
+
+  .amount-ada {
+    @apply font-mono text-text-secondary;
+  }
+}
