@@ -26,6 +26,7 @@ import { startConfirmationWorker } from './workers/confirmation.worker';
 import { startReceiptWorker } from './workers/receipt.worker';
 import { startNotificationWorker } from './workers/notification.worker';
 import { startExpiryWorker } from './workers/expiry.worker';
+import { startDailyStatsWorker } from './workers/dailyStats.worker';
 import { createAdminRouter } from './admin/bullboard';
 
 async function bootstrap(): Promise<void> {
@@ -101,7 +102,23 @@ async function bootstrap(): Promise<void> {
   startConfirmationWorker();
   startReceiptWorker();
   startNotificationWorker();
+  startDailyStatsWorker();
   await startExpiryWorker();
+
+  // Schedule nightly stats sync at 00:05 IST (18:35 UTC)
+  const { Queue } = await import('bullmq');
+  const dailyStatsQueue = new Queue('daily-stats', { connection: bullMqRedis });
+  await dailyStatsQueue.add(
+    'nightly-sync',
+    {},
+    {
+      repeat: { pattern: '35 18 * * *' }, // 00:05 IST daily
+      jobId: 'daily-stats-nightly',
+      removeOnComplete: { count: 7 },
+      removeOnFail: { count: 30 },
+    }
+  );
+
   console.log('✅ All BullMQ workers started');
 
   // ── Graceful shutdown ─────────────────────────────────────────────────────────

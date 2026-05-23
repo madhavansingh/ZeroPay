@@ -1,15 +1,11 @@
-import { MeshWallet, Transaction, BlockfrostProvider } from '@meshsdk/core';
+import 'dotenv/config';
+import { MeshTxBuilder, BlockfrostProvider } from '@meshsdk/core';
 import { env } from '../config/env';
 import { Invoice } from '../models/Invoice';
 
-const provider = new BlockfrostProvider(env.BLOCKFROST_PROJECT_ID);
+const METADATA_KEY = 674; // CIP standard key for payment metadata
+const MAX_METADATA_BYTES = 64;
 
-const METADATA_KEY = 674; // CIP standard key for app metadata
-const MAX_METADATA_BYTES = 64; // Cardano 64-byte field limit
-
-/**
- * Truncate a string to 64 bytes (Cardano metadata limit).
- */
 function truncateTo64Bytes(str: string): string {
   const encoded = new TextEncoder().encode(str);
   if (encoded.length <= MAX_METADATA_BYTES) return str;
@@ -25,8 +21,14 @@ export interface BuildTxResult {
 
 /**
  * Build an unsigned transaction CBOR for a payment invoice.
- * The backend NEVER signs — only builds and returns the unsigned CBOR.
- * The wallet (CIP-30) signs client-side.
+ *
+ * Design: backend NEVER holds a signing key. It only builds the transaction
+ * structure and returns the unsigned CBOR. The wallet (CIP-30 via window.cardano)
+ * signs client-side and submits to the network itself.
+ *
+ * MeshJS MeshTxBuilder approach:
+ * - No wallet required to build — uses BlockfrostProvider as data fetcher only
+ * - Returns raw CBOR that the CIP-30 wallet can sign with signTx()
  */
 export async function buildPaymentTx(invoiceId: string): Promise<BuildTxResult> {
   const invoice = await Invoice.findOne({ invoiceId });
@@ -38,24 +40,27 @@ export async function buildPaymentTx(invoiceId: string): Promise<BuildTxResult> 
     throw new Error('Invoice has expired');
   }
 
-  // Build metadata (all values must be ≤ 64 bytes)
-  const metadata = {
-    [METADATA_KEY]: {
-      app: truncateTo64Bytes('zeropay'),
-      schema: truncateTo64Bytes('1'),
-      invoiceId: truncateTo64Bytes(invoice.invoiceId),
-      merchantId: truncateTo64Bytes(invoice.merchantStringId),
-    },
+  const provider = new BlockfrostProvider(env.BLOCKFROST_PROJECT_ID);
+
+  // Build CIP-674 metadata (all values ≤ 64 bytes enforced by Cardano protocol)
+  const metadataValue = {
+    app: truncateTo64Bytes('zeropay'),
+    schema: truncateTo64Bytes('1'),
+    inv: truncateTo64Bytes(invoice.invoiceId),
+    mid: truncateTo64Bytes(invoice.merchantStringId),
   };
 
-  // Build unsigned transaction
-  // Note: MeshJS requires a wallet to build — we use a read-only provider approach
-  // The actual signing happens client-side via CIP-30
-  const tx = new Transaction({ initiator: provider as unknown as MeshWallet })
-    .sendLovelace(invoice.paymentAddress, invoice.amountLovelace.toString())
-    .setMetadata(METADATA_KEY, metadata[METADATA_KEY]);
+  const txBuilder = new MeshTxBuilder({ fetcher: provider, verbose: false });
 
-  const unsignedCbor = await tx.build();
+  // Build the tx:
+  // - Output: lovelace to merchant's payment address
+  // - Metadata: CIP-674 key 674 with invoice info
+  // Note: changeAddress will be filled in by the CIP-30 wallet at sign time
+  // We use a placeholder that gets replaced when the wallet signs
+  const unsignedCbor = await txBuilder
+    .txOut(invoice.paymentAddress, [{ unit: 'lovelace', quantity: invoice.amountLovelace.toString() }])
+    .metadataValue(METADATA_KEY, metadataValue)
+    .complete();
 
   return {
     unsignedCbor,

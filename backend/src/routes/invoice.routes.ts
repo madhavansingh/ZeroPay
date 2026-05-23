@@ -32,7 +32,7 @@ router.post(
       const { amountPaise, description, chatRoomId, customerId } =
         req.body as z.infer<typeof createSchema>;
 
-      const merchant = await Merchant.findOne({ userId: req.user.id });
+      const merchant = await Merchant.findOne({ userId: req.user._id });
       if (!merchant) {
         res.status(400).json({ success: false, error: 'Merchant profile not found' });
         return;
@@ -106,7 +106,7 @@ router.get(
   requireMerchant,
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const merchant = await Merchant.findOne({ userId: req.user.id });
+      const merchant = await Merchant.findOne({ userId: req.user._id });
       if (!merchant) {
         res.status(404).json({ success: false, error: 'Merchant not found' });
         return;

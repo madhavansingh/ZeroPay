@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, TrendingUp, Package, Clock, CheckCircle } from 'lucide-react';
+import { Plus, TrendingUp, Package, Clock, CheckCircle, QrCode } from 'lucide-react';
 import { getMerchantDashboard, getMerchantInvoices } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
 import InvoiceSheet from '../../components/organisms/InvoiceSheet';
+import RevenueChart from '../../components/organisms/RevenueChart';
 import StatusBadge from '../../components/atoms/StatusBadge';
 import type { InvoiceStatus } from '@zeropay/shared-types';
 
@@ -15,11 +17,19 @@ function paiseToinr(paise: number) {
   return (paise / 100).toFixed(2);
 }
 
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
 export default function DashboardPage() {
   const [showInvoiceSheet, setShowInvoiceSheet] = useState(false);
   const { user } = useAuthStore();
+  const navigate = useNavigate();
 
-  const { data: dashboardData } = useQuery({
+  const { data: dashboardData, isLoading } = useQuery({
     queryKey: ['merchant-dashboard'],
     queryFn: () => getMerchantDashboard(),
     refetchInterval: 30_000,
@@ -33,23 +43,51 @@ export default function DashboardPage() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const merchantData = (dashboardData?.data as any);
-  const merchant = merchantData?.merchant as { shopName: string; totalReceivedLovelace: number; totalOrders: number } | undefined;
-  const recentInvoices: Array<{ invoiceId: string; amountPaise: number; status: InvoiceStatus; createdAt: string }> =
-    ((invoicesData?.data as any)?.items ?? []) as Array<{ invoiceId: string; amountPaise: number; status: InvoiceStatus; createdAt: string }>;
+  const merchant = merchantData?.merchant as {
+    shopName: string;
+    merchantId: string;
+    totalReceivedLovelace: number;
+    totalOrders: number;
+  } | undefined;
 
-  const settledCount = (merchantData?.stats?.settled ?? 0) as number;
-  const pendingCount = ((merchantData?.stats?.pending ?? 0) + (merchantData?.stats?.confirming ?? 0)) as number;
+  const revenueByDay = (merchantData?.revenueByDay ?? {}) as Record<
+    string,
+    { lovelace: number; paise: number; count: number }
+  >;
+
+  const recentInvoices: Array<{
+    invoiceId: string;
+    amountPaise: number;
+    status: InvoiceStatus;
+    createdAt: string;
+  }> = ((invoicesData?.data as any)?.items ?? []);
+
+  const stats = merchantData?.stats ?? {};
+  const settledCount = (stats.settled ?? 0) as number;
+  const pendingCount = ((stats.pending ?? 0) + (stats.confirming ?? 0)) as number;
 
   return (
-    <div className="min-h-screen bg-surface pb-24">
+    <div className="min-h-screen bg-surface pb-28">
       {/* Header */}
-      <div className="px-5 pt-14 pb-6">
-        <p className="text-text-secondary text-sm">Good morning 👋</p>
-        <h1 className="text-2xl font-bold mt-0.5">{merchant?.shopName ?? user?.displayName}</h1>
+      <div className="px-5 pt-14 pb-5">
+        <p className="text-text-secondary text-sm">{getGreeting()} 👋</p>
+        <div className="flex items-center justify-between mt-0.5">
+          <h1 className="text-2xl font-bold">{merchant?.shopName ?? user?.displayName}</h1>
+          {merchant?.merchantId && (
+            <button
+              id="show-qr-btn"
+              onClick={() => navigate(`/merchant/qr/${merchant.merchantId}`)}
+              className="btn-ghost p-2 rounded-xl"
+              title="Show payment QR"
+            >
+              <QrCode size={22} className="text-teal-400" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Stats cards */}
-      <div className="px-5 grid grid-cols-2 gap-3 mb-6">
+      <div className="px-5 grid grid-cols-2 gap-3 mb-4">
         <div className="card">
           <div className="flex items-center gap-2 mb-3">
             <TrendingUp size={16} className="text-teal-400" />
@@ -84,14 +122,29 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Recent transactions */}
+      {/* Revenue chart */}
       <div className="px-5">
-        <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">Recent</h2>
+        {Object.keys(revenueByDay).length > 0 && (
+          <RevenueChart data={revenueByDay} />
+        )}
+      </div>
+
+      {/* Recent transactions */}
+      <div className="px-5 mt-2">
+        <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">
+          Recent
+        </h2>
         <div className="space-y-2">
-          {recentInvoices.length === 0 ? (
+          {isLoading ? (
+            Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="card h-14 animate-pulse bg-surface-elevated" />
+            ))
+          ) : recentInvoices.length === 0 ? (
             <div className="card text-center py-10">
               <p className="text-text-muted">No invoices yet</p>
-              <p className="text-text-muted text-sm mt-1">Tap + to create your first payment request</p>
+              <p className="text-text-muted text-sm mt-1">
+                Tap <span className="text-teal-400">+</span> to create your first payment request
+              </p>
             </div>
           ) : (
             recentInvoices.map((inv) => (
@@ -107,17 +160,17 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* FAB */}
+      {/* FAB — Create invoice */}
       <button
         id="create-invoice-fab"
         onClick={() => setShowInvoiceSheet(true)}
-        className="fixed bottom-8 right-6 w-16 h-16 bg-teal-600 hover:bg-teal-700 active:scale-95 rounded-full shadow-2xl shadow-teal-600/40 flex items-center justify-center transition-all"
+        className="fixed bottom-24 right-6 w-16 h-16 bg-teal-600 hover:bg-teal-700 active:scale-95 rounded-full shadow-2xl shadow-teal-600/40 flex items-center justify-center transition-all"
         aria-label="Create invoice"
       >
         <Plus size={28} className="text-white" />
       </button>
 
-      {/* Invoice sheet */}
+      {/* Invoice creation sheet */}
       {showInvoiceSheet && (
         <InvoiceSheet onClose={() => setShowInvoiceSheet(false)} />
       )}
