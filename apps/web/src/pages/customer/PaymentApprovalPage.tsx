@@ -13,11 +13,6 @@ interface CardanoApi {
   submitTx(tx: string): Promise<string>;
 }
 
-declare global {
-  interface Window {
-    cardano?: Record<string, { enable: () => Promise<CardanoApi>; name?: string } | undefined>;
-  }
-}
 
 async function getFirstAvailableWallet(): Promise<CardanoApi> {
   const walletKeys = ['eternl', 'lace', 'nami', 'flint', 'vespr', 'begin'];
@@ -154,26 +149,25 @@ export default function PaymentApprovalPage() {
           </div>
 
           <div className="card space-y-3">
-            {[
-              { label: 'Invoice', value: invoice.invoiceId, mono: true },
-              { label: 'Status', node: <StatusBadge status={invoice.status} /> },
-              invoice.description && { label: 'Description', value: invoice.description },
-              { label: 'To', value: `${invoice.paymentAddress?.slice(0, 12)}...${invoice.paymentAddress?.slice(-6)}`, mono: true },
-            ].filter(Boolean).map((row: { label?: string; value?: string; mono?: boolean; node?: React.ReactNode } | false | null | undefined, i) => {
-              if (!row) return null;
-              return (
-                <div key={i} className="flex justify-between items-center text-sm">
-                  <span className="text-text-secondary">{(row as { label: string }).label}</span>
-                  {(row as { node?: React.ReactNode }).node ? (
-                    (row as { node: React.ReactNode }).node
-                  ) : (
-                    <span className={`${(row as { mono?: boolean }).mono ? 'font-mono text-xs' : ''} text-text-primary text-right max-w-[55%] break-all`}>
-                      {(row as { value?: string }).value}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+            {(
+              [
+                { label: 'Invoice', value: invoice.invoiceId, mono: true },
+                { label: 'Status', node: <StatusBadge status={invoice.status} /> },
+                invoice.description ? { label: 'Description', value: invoice.description } : null,
+                { label: 'To', value: `${invoice.paymentAddress?.slice(0, 12)}...${invoice.paymentAddress?.slice(-6)}`, mono: true },
+              ] as Array<{ label: string; value?: string; mono?: boolean; node?: React.ReactNode } | null>
+            ).filter((row): row is { label: string; value?: string; mono?: boolean; node?: React.ReactNode } => row !== null).map((row, i) => (
+              <div key={i} className="flex justify-between items-center text-sm">
+                <span className="text-text-secondary">{row.label}</span>
+                {row.node ? (
+                  row.node
+                ) : (
+                  <span className={`${row.mono ? 'font-mono text-xs' : ''} text-text-primary text-right max-w-[55%] break-all`}>
+                    {row.value}
+                  </span>
+                )}
+              </div>
+            ))}
           </div>
 
           <div className="flex items-start gap-3 bg-teal-600/5 border border-teal-600/20 rounded-2xl p-4">

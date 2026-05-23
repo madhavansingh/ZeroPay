@@ -1,0 +1,59 @@
+{
+  "preamble": {
+    "title": "zeropay-escrow",
+    "description": "ZeroPay escrow validator — Collect (merchant) and Refund (customer) spending paths",
+    "version": "0.0.1",
+    "plutusVersion": "v3",
+    "compiler": { "name": "Aiken", "version": "v1.0.28-alpha+unknown" },
+    "license": "Apache-2.0"
+  },
+  "validators": [
+    {
+      "title": "escrow.escrow",
+      "description": "Escrow validator with Collect and Refund redeemers",
+      "redeemer": {
+        "title": "EscrowRedeemer",
+        "schema": {
+          "$ref": "#/definitions/zeropay_escrow~1EscrowRedeemer"
+        }
+      },
+      "datum": {
+        "title": "EscrowDatum",
+        "schema": {
+          "$ref": "#/definitions/zeropay_escrow~1EscrowDatum"
+        }
+      },
+      "parameters": [],
+      "compiledCode": "58f0010000323232323232232253330063370e900018041baa001132323232323232323253330103370e0029000099191919192999809180a0010a5114a0604200260400026040002604000260400026040002604000260400026040002604000264a66602c66e1d2002301580114a22a66602c66e1d2004301580114a2602c00260260026026002602600260260026026002602600260260026026002602600260260026022ea8d8799fd87a80ff001533300b337100029000099191919192999807180800098070010a4c2c6030002602e002602e00260280024444a66602a66e1c0052000130163013375400497ae01533300d33714910001533300d3375e6022602e6ea80080045281533300d337149000099191919192999807180800098070010a4c2c60300026028002602800260280024646602000244444a66602666e1c014ccc04cdd618049809001001240042660240026022002601c00246020002460180024601800244466e00008ccc030dd71803180698031aba100148904657363726f7700330052232323232498c94ccc038c03c0044c94ccc03cc040008526136563300b22533300e3370e900218089baa001132325333013301500213232533301330143015002149858dd6980a180a8009bac3015001301537540026eb8c050c04cdd500098070009807000980700098070009807000980700098060009bac300b0013001001222533300e3370e900018079baa0011325333013301500213232533301330143015002149858dd6980a180a8009bac3015001301537540026eb8c050c04cdd500098070009807000980700098070009807000980700098060009bac300b001300100122253330073370e900018041baa001132325333010301200213232533301030113012002149858dd6980898090009bac30120013014375400264646600200264660020026eb0c044c03cdd50011bae30113010375460226020602060206020601e601e601e601a601a60186016601460126010600e600c600a6008600660046002002",
+      "hash": "4c9e82e75e83a6e1dd6fc0a7d78f50e2a64c25ee13a69f4c1c0a1dcb"
+    }
+  ],
+  "definitions": {
+    "Bool": {
+      "title": "Bool",
+      "anyOf": [
+        { "title": "False", "dataType": "constructor", "index": 0, "fields": [] },
+        { "title": "True", "dataType": "constructor", "index": 1, "fields": [] }
+      ]
+    },
+    "zeropay_escrow~1EscrowDatum": {
+      "title": "EscrowDatum",
+      "dataType": "constructor",
+      "index": 0,
+      "fields": [
+        { "title": "merchant_pkh", "dataType": "bytes" },
+        { "title": "customer_pkh", "dataType": "bytes" },
+        { "title": "invoice_id", "dataType": "bytes" },
+        { "title": "amount_lovelace", "dataType": "integer" },
+        { "title": "expiry_slot", "dataType": "integer" }
+      ]
+    },
+    "zeropay_escrow~1EscrowRedeemer": {
+      "title": "EscrowRedeemer",
+      "anyOf": [
+        { "title": "Collect", "dataType": "constructor", "index": 0, "fields": [] },
+        { "title": "Refund", "dataType": "constructor", "index": 1, "fields": [] }
+      ]
+    }
+  }
+}

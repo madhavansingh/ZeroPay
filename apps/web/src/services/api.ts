@@ -78,3 +78,18 @@ export const buildTx = (invoiceId: string) =>
 
 export const submitTx = (data: { invoiceId: string; txHash: string }) =>
   http.post<ApiResponse>('/payments/submit', data).then((r) => r.data);
+
+// ─── Chat ─────────────────────────────────────────────────────────────────────
+
+export const createChatRoom = (data: { merchantStringId: string }) =>
+  http.post<ApiResponse<{ roomId: string; shopName: string; isNew: boolean }>>(
+    '/chat/rooms/create',
+    data
+  ).then((r) => r.data);
+
+export const getChatRooms = () =>
+  http.get<ApiResponse<{ rooms: unknown[] }>>('/chat/rooms').then((r) => r.data);
+
+export const getChatRoom = (roomId: string) =>
+  http.get<ApiResponse>(`/chat/rooms/${roomId}`).then((r) => r.data);
+

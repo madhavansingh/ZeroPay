@@ -1,7 +1,8 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
+import BottomNav from './components/organisms/BottomNav';
 
-// Auth pages
+// Auth
 import SplashPage from './pages/auth/SplashPage';
 import PhoneAuthPage from './pages/auth/PhoneAuthPage';
 import RoleSelectPage from './pages/auth/RoleSelectPage';
@@ -13,6 +14,7 @@ import WalletConnectPage from './pages/onboarding/WalletConnectPage';
 // Merchant
 import DashboardPage from './pages/merchant/DashboardPage';
 import CounterCheckoutPage from './pages/merchant/CounterCheckoutPage';
+import QRDisplayPage from './pages/merchant/QRDisplayPage';
 
 // Customer
 import ChatListPage from './pages/customer/ChatListPage';
@@ -42,7 +44,6 @@ function RequireMerchant({ children }: { children: React.ReactNode }) {
 export default function App() {
   const { isAuthenticated, isLoading, user } = useAuthStore();
 
-  // Determine where to redirect after auth
   const getHomeRoute = () => {
     if (!user) return '/auth';
     if (user.onboardingStep !== 'complete') {
@@ -57,34 +58,40 @@ export default function App() {
   if (isLoading) return <SplashPage />;
 
   return (
-    <Routes>
-      {/* Root redirect */}
-      <Route path="/" element={<Navigate to={isAuthenticated ? getHomeRoute() : '/auth'} replace />} />
+    <>
+      <Routes>
+        {/* Root redirect */}
+        <Route path="/" element={<Navigate to={isAuthenticated ? getHomeRoute() : '/auth'} replace />} />
 
-      {/* Auth */}
-      <Route path="/auth" element={<PhoneAuthPage />} />
-      <Route path="/auth/role" element={<RequireAuth><RoleSelectPage /></RequireAuth>} />
+        {/* Auth */}
+        <Route path="/auth" element={<PhoneAuthPage />} />
+        <Route path="/auth/role" element={<RequireAuth><RoleSelectPage /></RequireAuth>} />
 
-      {/* Onboarding */}
-      <Route path="/onboarding/shop" element={<RequireAuth><ShopSetupPage /></RequireAuth>} />
-      <Route path="/onboarding/wallet" element={<RequireAuth><WalletConnectPage /></RequireAuth>} />
+        {/* Onboarding */}
+        <Route path="/onboarding/shop" element={<RequireAuth><ShopSetupPage /></RequireAuth>} />
+        <Route path="/onboarding/wallet" element={<RequireAuth><WalletConnectPage /></RequireAuth>} />
 
-      {/* Merchant */}
-      <Route path="/merchant/dashboard" element={<RequireAuth><RequireMerchant><DashboardPage /></RequireMerchant></RequireAuth>} />
-      <Route path="/merchant/checkout" element={<RequireAuth><RequireMerchant><CounterCheckoutPage /></RequireMerchant></RequireAuth>} />
+        {/* Merchant */}
+        <Route path="/merchant/dashboard" element={<RequireAuth><RequireMerchant><DashboardPage /></RequireMerchant></RequireAuth>} />
+        <Route path="/merchant/checkout" element={<RequireAuth><RequireMerchant><CounterCheckoutPage /></RequireMerchant></RequireAuth>} />
+        <Route path="/merchant/qr/:merchantId" element={<RequireAuth><RequireMerchant><QRDisplayPage /></RequireMerchant></RequireAuth>} />
 
-      {/* Customer */}
-      <Route path="/customer/chats" element={<RequireAuth><ChatListPage /></RequireAuth>} />
-      <Route path="/customer/chats/:roomId" element={<RequireAuth><ChatRoomPage /></RequireAuth>} />
-      <Route path="/customer/scan" element={<RequireAuth><ScanQRPage /></RequireAuth>} />
-      <Route path="/customer/pay/:merchantId" element={<RequireAuth><PaymentApprovalPage /></RequireAuth>} />
+        {/* Customer */}
+        <Route path="/customer/chats" element={<RequireAuth><ChatListPage /></RequireAuth>} />
+        <Route path="/customer/chats/:roomId" element={<RequireAuth><ChatRoomPage /></RequireAuth>} />
+        <Route path="/customer/scan" element={<RequireAuth><ScanQRPage /></RequireAuth>} />
+        <Route path="/customer/pay/:merchantId" element={<RequireAuth><PaymentApprovalPage /></RequireAuth>} />
 
-      {/* Shared */}
-      <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
-      <Route path="/receipt/:invoiceId" element={<RequireAuth><ReceiptPage /></RequireAuth>} />
+        {/* Shared */}
+        <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
+        <Route path="/receipt/:invoiceId" element={<RequireAuth><ReceiptPage /></RequireAuth>} />
 
-      {/* 404 */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        {/* 404 */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+
+      {/* Global bottom nav — renders on authenticated pages only */}
+      {isAuthenticated && <BottomNav />}
+    </>
   );
 }

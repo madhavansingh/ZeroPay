@@ -1,0 +1,38 @@
+{
+  "name": "ZeroPay",
+  "short_name": "ZeroPay",
+  "description": "Blockchain payments made simple. Accept ADA via chat.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B1120",
+  "theme_color": "#14A99A",
+  "categories": ["finance", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Scan QR",
+      "url": "/customer/scan",
+      "description": "Scan a merchant QR code to pay"
+    },
+    {
+      "name": "Dashboard",
+      "url": "/merchant/dashboard",
+      "description": "View merchant revenue dashboard"
+    }
+  ]
+}
