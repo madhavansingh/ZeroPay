@@ -7,7 +7,7 @@ import { Invoice } from '../models/Invoice';
 import { Transaction } from '../models/Transaction';
 import { Merchant } from '../models/Merchant';
 import { buildPaymentTx } from '../services/mesh.service';
-import { transitionInvoiceStatus } from '../services/invoice.service';
+import { transitionInvoiceStatus, injectChatMessage } from '../services/invoice.service';
 import { enqueueNotification, enqueueTxConfirmation } from '../queues/queue.definitions';
 
 const router = Router();
@@ -95,6 +95,17 @@ router.post(
         amountLovelaceExpected: invoice.amountLovelace,
         status: 'submitted',
       });
+
+      // Inject submitted message into chat room
+      if (invoice.chatRoomId) {
+        await injectChatMessage(invoice.chatRoomId, 'payment-submitted', {
+          invoiceId,
+          txHash,
+          amountPaise: invoice.amountPaise,
+          amountLovelace: invoice.amountLovelace,
+          submittedAt: new Date().toISOString(),
+        });
+      }
 
       // Enqueue confirmation polling
       await enqueueTxConfirmation({

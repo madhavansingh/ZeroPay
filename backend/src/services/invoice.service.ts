@@ -163,8 +163,17 @@ export async function injectChatMessage(
     });
 
     // Update lastMessage preview
+    let preview = 'New message';
+    if (type === 'payment-request') {
+      preview = '💳 Payment Request';
+    } else if (type === 'payment-submitted') {
+      preview = '⏳ Payment Submitted';
+    } else if (type === 'receipt') {
+      preview = '✅ Payment Confirmed';
+    }
+
     await db.ref(`/chatrooms/${chatRoomId}/lastMessage`).set({
-      preview: type === 'payment-request' ? '💳 Payment Request' : '✅ Payment Confirmed',
+      preview,
       timestamp: Date.now(),
     });
   } catch (err) {

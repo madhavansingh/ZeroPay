@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Loader } from 'lucide-react';
 import { database } from '../../services/firebase';
 import { ref, onValue, push, set, DataSnapshot } from 'firebase/database';
 import { useAuthStore } from '../../stores/authStore';
@@ -11,7 +11,7 @@ import InvoiceSheet from '../../components/organisms/InvoiceSheet';
 interface ChatMessage {
   key: string;
   senderId: string;
-  type: 'text' | 'payment-request' | 'receipt' | 'system';
+  type: 'text' | 'payment-request' | 'payment-submitted' | 'receipt' | 'system';
   text?: string;
   payload?: Record<string, unknown>;
   timestamp: number;
@@ -127,6 +127,39 @@ export default function ChatRoomPage() {
                     expiresAt: string;
                   }}
                 />
+              );
+            }
+
+            if (msg.type === 'payment-submitted' && msg.payload) {
+              const payload = msg.payload as {
+                invoiceId: string;
+                txHash: string;
+                amountPaise: number;
+                amountLovelace: number;
+                submittedAt: string;
+              };
+
+              return (
+                <div key={msg.key} className="flex justify-center my-2 animate-fade-in">
+                  <div className="bg-teal-500/10 border border-teal-500/20 text-teal-400 text-xs px-4 py-2.5 rounded-3xl flex flex-col items-center gap-1.5 font-medium w-full max-w-[240px] text-center">
+                    <div className="flex items-center gap-1.5">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-teal-500"></span>
+                      </span>
+                      <Loader size={12} className="animate-spin text-teal-400" />
+                      <span className="uppercase tracking-wider font-semibold text-[10px]">
+                        Payment Submitted
+                      </span>
+                    </div>
+                    <p className="text-text-primary text-sm font-semibold mt-0.5">
+                      ₹{(payload.amountPaise / 100).toFixed(2)}
+                    </p>
+                    <p className="text-text-muted text-[10px] font-mono">
+                      {(payload.amountLovelace / 1_000_000).toFixed(4)} ADA · confirming
+                    </p>
+                  </div>
+                </div>
               );
             }
 
