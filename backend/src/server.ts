@@ -24,6 +24,17 @@ import priceRoutes from './routes/price.routes';
 import chatRoutes from './routes/chat.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import diagnosticsRouter from './routes/diagnostics.routes';
+import escrowRoutes from './routes/escrow.routes';
+import evidenceRoutes from './routes/evidence.routes';
+import aiRoutes from './routes/ai.routes';
+import adminRoutes from './routes/admin.routes';
+import developerRoutes from './routes/developer.routes';
+import storefrontRoutes from './routes/storefront.routes';
+import catalogRoutes from './routes/catalog.routes';
+import webhookRoutes from './routes/webhook.routes';
+
+import { initSubscribers } from './events/subscribers';
+import { metricsCollector, createMetricsRouter } from './middleware/metrics.middleware';
 
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { startConfirmationWorker } from './workers/confirmation.worker';
@@ -31,6 +42,9 @@ import { startReceiptWorker } from './workers/receipt.worker';
 import { startNotificationWorker } from './workers/notification.worker';
 import { startExpiryWorker } from './workers/expiry.worker';
 import { startDailyStatsWorker } from './workers/dailyStats.worker';
+import { startReconciliationWorker } from './workers/reconciliation.worker';
+import { startDigitalDeliveryWorker } from './workers/digital-delivery.worker';
+import { startWebhookDeliveryWorker } from './workers/webhook-delivery.worker';
 import { dailyStatsQueue } from './queues/queue.definitions';
 import { createAdminRouter } from './admin/bullboard';
 import type { Worker } from 'bullmq';
@@ -52,6 +66,7 @@ process.on('unhandledRejection', (reason: unknown) => {
 async function bootstrap(): Promise<void> {
   initFirebase();
   await connectDatabase();
+  initSubscribers();
 
   // ── Mongoose connection lifecycle logging ──────────────────────────────────
   mongoose.connection.on('disconnected', () => logger.warn('MongoDB disconnected'));
@@ -74,6 +89,9 @@ async function bootstrap(): Promise<void> {
   app.use(express.urlencoded({ extended: true }));
   app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
+  // ── Metrics collection ────────────────────────────────────────────────────
+  app.use(metricsCollector);
+
   // ── Request correlation ID + duration tracking ─────────────────────────────
   app.use((req: Request, res: Response, next: NextFunction) => {
     const requestId = (req.headers['x-request-id'] as string) || randomUUID();
@@ -87,8 +105,9 @@ async function bootstrap(): Promise<void> {
     next();
   });
 
-  // ── Diagnostics / health routes ────────────────────────────────────────────
+  // ── Diagnostics / health / metrics routes ──────────────────────────────────
   app.use('/health', diagnosticsRouter);
+  app.use('/metrics', createMetricsRouter());
 
   // ── Bull Board admin UI (basic auth protected) ────────────────────────────
   const adminUser = process.env.ADMIN_USERNAME ?? 'zeropay-admin';
@@ -112,6 +131,14 @@ async function bootstrap(): Promise<void> {
   app.use('/api/v1/payments', paymentRoutes);
   app.use('/api/v1/price', priceRoutes);
   app.use('/api/v1/chat', chatRoutes);
+  app.use('/api/v1/escrow', escrowRoutes);
+  app.use('/api/v1/evidence', evidenceRoutes);
+  app.use('/api/v1/ai', aiRoutes);
+  app.use('/api/v1/admin', adminRoutes);
+  app.use('/api/v1/developer', developerRoutes);
+  app.use('/api/v1/storefronts', storefrontRoutes);
+  app.use('/api/v1/catalog', catalogRoutes);
+  app.use('/api/v1/webhooks', webhookRoutes);
 
   // ── Sentry Error Handler (must be before custom error handlers) ───────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -134,6 +161,9 @@ async function bootstrap(): Promise<void> {
   workers.push(startNotificationWorker());
   workers.push(startDailyStatsWorker());
   workers.push(await startExpiryWorker());
+  workers.push(await startReconciliationWorker());
+  workers.push(startDigitalDeliveryWorker());
+  workers.push(startWebhookDeliveryWorker());
 
   // Schedule nightly stats sync at 00:05 IST (18:35 UTC)
   await dailyStatsQueue.add(

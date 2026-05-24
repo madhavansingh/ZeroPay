@@ -24,6 +24,10 @@ const profileSchema = z.object({
       paymentReceived: z.boolean().optional(),
       paymentConfirmed: z.boolean().optional(),
       invoiceExpired: z.boolean().optional(),
+      escrowUpdates: z.boolean().optional(),
+      disputeAlerts: z.boolean().optional(),
+      milestoneNotifications: z.boolean().optional(),
+      channels: z.array(z.enum(['push', 'email'])).optional(),
     })
     .optional(),
 });

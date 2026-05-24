@@ -46,6 +46,14 @@ const envSchema = z.object({
 
   // Sentry (optional)
   SENTRY_DSN: z.string().url().optional(),
+
+  // Gemini API
+  GEMINI_API_KEY: z.string().min(1, 'GEMINI_API_KEY is required'),
+
+  // Escrow configuration
+  ESCROW_ADMIN_ADDRESS: z.string().regex(/^addr(_test)?1[a-z0-9]+$/).default('addr_test1vqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygxrcya6'),
+  ESCROW_TREASURY_ADDRESS: z.string().regex(/^addr(_test)?1[a-z0-9]+$/).default('addr_test1vq3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygswahgq5'),
+  ESCROW_PLATFORM_FEE_LOVELACE: z.string().default('2000000').transform(Number),
 });
 
 const parsed = envSchema.safeParse(process.env);

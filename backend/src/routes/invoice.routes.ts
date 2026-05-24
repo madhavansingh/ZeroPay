@@ -18,6 +18,14 @@ const createSchema = z.object({
   description: z.string().max(100).trim().optional(),
   chatRoomId: z.string().optional(),
   customerId: z.string().optional(),
+  milestones: z
+    .array(
+      z.object({
+        title: z.string().min(1, 'Milestone title is required').max(100),
+        amountPaise: z.number().int().positive('Milestone amount must be positive'),
+      })
+    )
+    .optional(),
 });
 
 // POST /api/v1/invoices/create
@@ -29,7 +37,7 @@ router.post(
   validate(createSchema),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const { amountPaise, description, chatRoomId, customerId } =
+      const { amountPaise, description, chatRoomId, customerId, milestones } =
         req.body as z.infer<typeof createSchema>;
 
       const merchant = await Merchant.findOne({ userId: req.user._id });
@@ -44,6 +52,7 @@ router.post(
         description,
         chatRoomId,
         customerId,
+        milestones,
       });
 
       res.status(201).json({
@@ -91,6 +100,14 @@ router.get('/:invoiceId', requireAuth, async (req: Request, res: Response): Prom
         receiptCid: invoice.receiptCid,
         createdAt: invoice.createdAt,
         settledAt: invoice.settledAt,
+        escrowState: invoice.escrowState,
+        milestones: invoice.milestones,
+        milestoneIndex: invoice.milestoneIndex,
+        totalMilestones: invoice.totalMilestones,
+        isDisputed: invoice.isDisputed,
+        agreementHash: invoice.agreementHash,
+        metadataHash: invoice.metadataHash,
+        contractVersion: invoice.contractVersion,
       },
     });
   } catch (err: unknown) {
@@ -140,6 +157,8 @@ router.get(
             createdAt: inv.createdAt,
             settledAt: inv.settledAt,
             txHash: inv.txHash,
+            escrowState: inv.escrowState,
+            isDisputed: inv.isDisputed,
           })),
           total,
           page,

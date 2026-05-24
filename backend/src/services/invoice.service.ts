@@ -17,7 +17,9 @@ export interface CreateInvoiceInput {
   amountPaise: number;
   description?: string;
   customerId?: string;
+  productId?: string;
   chatRoomId?: string;
+  milestones?: Array<{ title: string; amountPaise: number }>;
 }
 
 export async function createInvoice(input: CreateInvoiceInput): Promise<IInvoice> {
@@ -39,14 +41,36 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<IInvoice
     throw new Error('Amount too small — minimum 1 ADA required after conversion');
   }
 
+  // Validate and parse milestones
+  let parsedMilestones: Array<{ title: string; amountLovelace: number; status: 'pending' }> = [];
+  if (input.milestones && input.milestones.length > 0) {
+    const sumPaise = input.milestones.reduce((sum, m) => sum + m.amountPaise, 0);
+    if (sumPaise !== input.amountPaise) {
+      throw new Error(`Sum of milestones (₹${(sumPaise / 100).toFixed(2)}) must equal total amount (₹${(input.amountPaise / 100).toFixed(2)})`);
+    }
+
+    parsedMilestones = input.milestones.map((m) => {
+      const milestoneLovelace = paiseToLovelace(m.amountPaise, priceData.rate);
+      return {
+        title: m.title,
+        amountLovelace: milestoneLovelace,
+        status: 'pending' as const,
+      };
+    });
+  }
+
   const invoiceId = generateInvoiceId();
   const expiresAt = new Date(Date.now() + merchant.invoiceExpiry * 1000);
+
+  const totalMilestones = parsedMilestones.length;
+  const escrowState = totalMilestones > 0 ? 'Created' : 'None';
 
   const invoice = await Invoice.create({
     invoiceId,
     merchantId: merchant._id,
     merchantStringId: merchant.merchantId,
     customerId: input.customerId ?? undefined,
+    productId: input.productId ?? undefined,
     chatRoomId: input.chatRoomId ?? undefined,
     description: input.description?.trim(),
     amountPaise: input.amountPaise,
@@ -55,10 +79,23 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<IInvoice
     paymentAddress: merchant.paymentAddress,
     status: 'pending',
     expiresAt,
+    escrowState,
+    milestones: parsedMilestones,
+    totalMilestones,
+    milestoneIndex: 0,
+    isDisputed: false,
   });
 
   // Mirror status to Firebase RTDB for real-time frontend updates
   await mirrorStatusToFirebase(invoiceId, 'pending');
+  if (totalMilestones > 0) {
+    await mirrorEscrowToFirebase(invoiceId, 'Created', {
+      milestoneIndex: 0,
+      totalMilestones,
+      isDisputed: false,
+      milestones: parsedMilestones,
+    });
+  }
 
   // Inject payment_request message to chat room if this is a chat payment
   if (input.chatRoomId) {
@@ -146,6 +183,31 @@ export async function mirrorStatusToFirebase(
     console.warn(`[invoice] Firebase mirror failed for ${invoiceId}:`, err);
   }
 }
+
+export async function mirrorEscrowToFirebase(
+  invoiceId: string,
+  escrowState: string,
+  updates: {
+    milestoneIndex?: number;
+    totalMilestones?: number;
+    isDisputed?: boolean;
+    milestones?: any[];
+    [key: string]: any;
+  } = {}
+): Promise<void> {
+  try {
+    const db = getFirebaseDatabase();
+    await db.ref(`/escrow/${invoiceId}`).update({
+      escrowState,
+      updatedAt: Date.now(),
+      ...updates,
+    });
+  } catch (err) {
+    // Non-fatal
+    console.warn(`[invoice] Firebase escrow mirror failed for ${invoiceId}:`, err);
+  }
+}
+
 
 export async function injectChatMessage(
   chatRoomId: string,

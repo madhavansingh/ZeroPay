@@ -36,11 +36,28 @@ export interface Invoice {
   confirmedAt?: string;
   settledAt?: string;
   receiptCid?: string;
+  escrowState?: string;
+  milestones?: Array<{
+    title: string;
+    amountLovelace: number;
+    status: 'pending' | 'released' | 'disputed';
+    releasedAt?: string;
+  }>;
+  milestoneIndex?: number;
+  totalMilestones?: number;
+  isDisputed?: boolean;
+  agreementHash?: string;
+  metadataHash?: string;
+  contractVersion?: number;
+  escrowLockTxHash?: string;
+  escrowCustomerAddress?: string;
+  disputeTxHash?: string;
+  resolutionTxHash?: string;
 }
 
 // ─── User Types ───────────────────────────────────────────────────────────────
 
-export type UserRole = 'customer' | 'merchant' | 'both';
+export type UserRole = 'customer' | 'merchant' | 'both' | 'admin';
 
 export type OnboardingStep =
   | 'new'
@@ -183,4 +200,178 @@ export interface IpfsReceipt {
   confirmedAt: string;
   settledAt: string;
   networkConfirmations: number;
+  escrow?: {
+    escrowState: string;
+    milestoneIndex: number;
+    totalMilestones: number;
+    isDisputed: boolean;
+    milestones: Array<{
+      title: string;
+      amountLovelace: number;
+      status: string;
+      releasedAt?: string;
+    }>;
+    agreementHash?: string;
+    metadataHash?: string;
+  };
 }
+
+// ─── Phase 3: Storefront & Commerce Types ─────────────────────────────────────
+
+export type ProductCategory = 'digital' | 'physical' | 'service';
+
+export interface Product {
+  productId: string;
+  merchantId: string;
+  title: string;
+  description: string;
+  priceLovelace: number;
+  priceINR?: number;
+  category: ProductCategory;
+  isDigital: boolean;
+  ipfsHash?: string;
+  inventory?: number;
+  images: string[];
+  tags: string[];
+  isActive: boolean;
+  totalSold: number;
+  rating?: number;
+  createdAt: string;
+}
+
+export interface Review {
+  invoiceId: string;
+  merchantId: string;
+  customerId: string;
+  productId?: string;
+  rating: number;
+  body?: string;
+  isVerified: boolean;
+  createdAt: string;
+}
+
+export interface StorefrontProfile {
+  slug: string;
+  shopName: string;
+  description?: string;
+  category: MerchantCategory;
+  profileImageUrl?: string;
+  bannerImageUrl?: string;
+  location?: { city?: string; state?: string; country?: string };
+  socialLinks?: { instagram?: string; twitter?: string; website?: string };
+  businessHours?: string;
+  reputationScore: number;
+  reliabilityTier: string;
+  verifiedMerchantBadge: boolean;
+  totalOrders: number;
+  escrowCompletionRate: number;
+}
+
+// ─── Phase 3: Developer API Types ─────────────────────────────────────────────
+
+export type ApiPermission =
+  | 'escrow:read'
+  | 'escrow:write'
+  | 'invoice:read'
+  | 'invoice:write'
+  | 'webhooks:write'
+  | 'merchant:read'
+  | '*';
+
+export interface ApiKeyInfo {
+  keyId: string;
+  name: string;
+  permissions: ApiPermission[];
+  rateLimitTier: 'starter' | 'pro' | 'enterprise';
+  requestCount: number;
+  lastUsedAt?: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export type WebhookEvent =
+  | 'escrow.locked'
+  | 'escrow.released'
+  | 'escrow.disputed'
+  | 'escrow.resolved'
+  | 'invoice.created'
+  | 'invoice.paid'
+  | 'invoice.expired'
+  | 'milestone.released';
+
+export interface WebhookInfo {
+  id: string;
+  url: string;
+  events: WebhookEvent[];
+  isActive: boolean;
+  failureCount: number;
+  lastDeliveredAt?: string;
+  createdAt: string;
+}
+
+// ─── Phase 3: Dispute Resolution Types ────────────────────────────────────────
+
+export type VerdictStatus = 'pending' | 'auto_queued' | 'accepted' | 'rejected' | 'executed';
+
+export interface DisputeVerdictSummary {
+  invoiceId: string;
+  merchantSplitPercent: number;
+  customerSplitPercent: number;
+  confidence: number;
+  reasoning: string;
+  keyClaims: string[];
+  status: VerdictStatus;
+  humanReviewRequired: boolean;
+  autoExecAt?: string;
+  executedTxHash?: string;
+  createdAt: string;
+}
+
+// ─── Phase 3: Reputation Types ────────────────────────────────────────────────
+
+export interface ReputationCard {
+  walletAddress?: string;
+  merchantId: string;
+  shopName: string;
+  reputationScore: number;
+  reliabilityTier: string;
+  verifiedMerchantBadge: boolean;
+  totalOrders: number;
+  disputeRate: string;
+  escrowCompletionRate: number;
+  reviewSummary: { average: number; count: number };
+}
+
+// ─── Phase 3: Marketplace Types ───────────────────────────────────────────────
+
+export interface MarketplaceMerchant {
+  slug: string;
+  shopName: string;
+  category: MerchantCategory;
+  profileImageUrl?: string;
+  reputationScore: number;
+  reliabilityTier: string;
+  verifiedMerchantBadge: boolean;
+  totalOrders: number;
+  location?: { city?: string };
+}
+
+// ─── Phase 3: Analytics Types ─────────────────────────────────────────────────
+
+export interface MerchantKPIs {
+  totalRevenueLovelace: number;
+  totalOrders: number;
+  avgOrderLovelace: number;
+  escrowCompletionRate: number;
+  disputeRate: string;
+  activeProducts: number;
+  storefrontViews: number;
+  storefrontConversions: number;
+}
+
+export interface RevenueDataPoint {
+  date: string;
+  totalLovelace: number;
+  orderCount: number;
+}
+

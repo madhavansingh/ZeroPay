@@ -60,3 +60,27 @@ export const paymentRateLimit = createRateLimiter({
   keyFn: (req) => cacheKeys.rateLimitPayment(req.user?.id ?? req.ip ?? 'unknown'),
   errorMessage: 'Too many payment submissions. Please wait 10 minutes.',
 });
+
+// AI endpoints protection: Max 5 requests/min per user
+export const aiRateLimit = createRateLimiter({
+  windowSeconds: 60,
+  maxRequests: 5,
+  keyFn: (req) => cacheKeys.rateLimitAI(req.user?.id ?? req.ip ?? 'unknown'),
+  errorMessage: 'Too many AI requests. Please try again in a minute.',
+});
+
+// Upload endpoint protection: Max 5 uploads/min per user
+export const uploadRateLimit = createRateLimiter({
+  windowSeconds: 60,
+  maxRequests: 5,
+  keyFn: (req) => cacheKeys.rateLimitUpload(req.user?.id ?? req.ip ?? 'unknown'),
+  errorMessage: 'Too many upload attempts. Please try again in a minute.',
+});
+
+// Dispute action protection: Max 3 dispute actions per day per user
+export const disputeRateLimit = createRateLimiter({
+  windowSeconds: 86400,
+  maxRequests: 3,
+  keyFn: (req) => cacheKeys.rateLimitDispute(req.user?.id ?? req.ip ?? 'unknown'),
+  errorMessage: 'Dispute threshold reached. Only 3 disputes can be raised per day.',
+});

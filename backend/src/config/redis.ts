@@ -34,10 +34,22 @@ export const cacheKeys = {
   rateLimitAuth: (ip: string) => `ratelimit:auth:${ip}`,
   rateLimitInvoice: (userId: string) => `ratelimit:invoice:${userId}`,
   rateLimitPayment: (userId: string) => `ratelimit:payment:${userId}`,
+  rateLimitAI: (userId: string) => `ratelimit:ai:${userId}`,
+  rateLimitUpload: (userId: string) => `ratelimit:upload:${userId}`,
+  rateLimitDispute: (userId: string) => `ratelimit:dispute:${userId}`,
+  storefrontProfile: (slug: string) => `storefront:${slug}`,
+  marketplaceFeed: (city: string) => `marketplace:feed:${city}`,
+  marketplaceTrending: () => 'marketplace:trending',
+  reputation: (walletAddress: string) => `reputation:${walletAddress}`,
+  rateLimitDeveloper: (keyId: string) => `ratelimit:developer:${keyId}`,
 } as const;
 
 export const cacheTtl = {
   adaInrRate: 60,          // 60 seconds
   merchantProfile: 300,    // 5 minutes
   dailyStats: 90000,       // 25 hours
+  storefrontProfile: 600,  // 10 minutes
+  marketplaceFeed: 300,    // 5 minutes
+  marketplaceTrending: 60, // 1 minute
+  reputation: 600,         // 10 minutes
 } as const;

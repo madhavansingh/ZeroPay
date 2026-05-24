@@ -47,6 +47,42 @@ export const dailyStatsQueue = new Queue('daily-stats', {
   ...defaultQueueOptions,
 });
 
+export const reconciliationQueue = new Queue('escrow-reconciliation', {
+  ...defaultQueueOptions,
+});
+
+export const disputeResolutionQueue = new Queue('dispute-resolution', {
+  ...defaultQueueOptions,
+  defaultJobOptions: {
+    ...defaultQueueOptions.defaultJobOptions,
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 10_000 },
+  },
+});
+
+export const webhookQueue = new Queue('webhook-delivery', {
+  ...defaultQueueOptions,
+  defaultJobOptions: {
+    ...defaultQueueOptions.defaultJobOptions,
+    attempts: 5,
+    backoff: { type: 'exponential', delay: 1_000 },
+  },
+});
+
+export const digitalDeliveryQueue = new Queue('digital-delivery', {
+  ...defaultQueueOptions,
+  defaultJobOptions: {
+    ...defaultQueueOptions.defaultJobOptions,
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5_000 },
+  },
+});
+
+export const storefrontIndexQueue = new Queue('storefront-index', {
+  ...defaultQueueOptions,
+});
+
+
 // ─── Job payload types ────────────────────────────────────────────────────────
 
 export interface TxConfirmationJobData {
@@ -64,12 +100,46 @@ export interface ReceiptJobData {
 }
 
 export interface NotificationJobData {
-  type: 'payment-confirmed' | 'invoice-expired' | 'payment-incoming';
+  type:
+    | 'payment-confirmed'
+    | 'invoice-expired'
+    | 'payment-incoming'
+    | 'escrow-locked'
+    | 'milestone-released'
+    | 'dispute-raised'
+    | 'refund-completed';
   merchantUserId?: string;
   customerUserId?: string;
   invoiceId: string;
   amountPaise: number;
   shopName: string;
+}
+
+export interface DisputeResolutionJobData {
+  invoiceId: string;
+  chatRoomId?: string;
+  totalLovelace: number;
+  merchantId: string;
+  customerId: string;
+}
+
+export interface WebhookDeliveryJobData {
+  webhookSubscriptionId: string;
+  event: string;
+  payload: Record<string, unknown>;
+  attemptNumber: number;
+}
+
+export interface DigitalDeliveryJobData {
+  invoiceId: string;
+  productId: string;
+  customerId: string;
+  ipfsHash: string;
+}
+
+export interface StorefrontIndexJobData {
+  merchantId: string;
+  action: 'update' | 'delete';
 }
 
 // ─── Enqueue helpers ──────────────────────────────────────────────────────────
@@ -88,4 +158,24 @@ export async function enqueueReceipt(data: ReceiptJobData): Promise<void> {
 
 export async function enqueueNotification(data: NotificationJobData): Promise<void> {
   await notificationQueue.add('dispatch', data);
+}
+
+export async function enqueueDisputeResolution(data: DisputeResolutionJobData): Promise<void> {
+  await disputeResolutionQueue.add('resolve', data, {
+    jobId: `dispute:${data.invoiceId}`,
+  });
+}
+
+export async function enqueueWebhookDelivery(data: WebhookDeliveryJobData): Promise<void> {
+  await webhookQueue.add('deliver', data);
+}
+
+export async function enqueueDigitalDelivery(data: DigitalDeliveryJobData): Promise<void> {
+  await digitalDeliveryQueue.add('deliver', data, {
+    jobId: `delivery:${data.invoiceId}`,
+  });
+}
+
+export async function enqueueStorefrontIndex(data: StorefrontIndexJobData): Promise<void> {
+  await storefrontIndexQueue.add('index', data);
 }

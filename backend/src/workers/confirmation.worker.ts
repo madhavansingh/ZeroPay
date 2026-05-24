@@ -8,6 +8,8 @@ import { getTxInfo, verifyPayment } from '../services/blockchain.service';
 import { transitionInvoiceStatus } from '../services/invoice.service';
 import { enqueueReceipt, enqueueNotification, TxConfirmationJobData } from '../queues/queue.definitions';
 import { Merchant } from '../models/Merchant';
+import { ESCROW_SCRIPT_ADDRESS } from '../services/escrow.service';
+import { updateMerchantReputation } from '../services/reputation.service';
 
 const MIN_CONFIRMATIONS = env.MIN_CONFIRMATIONS;
 const HIGH_VALUE_THRESHOLD_USD = env.HIGH_VALUE_THRESHOLD_USD;
@@ -98,7 +100,11 @@ export function startConfirmationWorker(): Worker {
       }
 
       // ── Confirmed! ────────────────────────────────────────────────────────
-      const verificationResult = verifyPayment(txInfo, paymentAddress, amountLovelace);
+      const isEscrow = invoice.escrowState && invoice.escrowState !== 'None';
+      const expectedAddress = isEscrow ? ESCROW_SCRIPT_ADDRESS : paymentAddress;
+      const expectedAmount = isEscrow ? (invoice.amountLovelace + env.ESCROW_PLATFORM_FEE_LOVELACE) : amountLovelace;
+
+      const verificationResult = verifyPayment(txInfo, expectedAddress, expectedAmount);
 
       await Transaction.findOneAndUpdate(
         { txHash },
@@ -128,6 +134,11 @@ export function startConfirmationWorker(): Worker {
         logger.warn('[confirmation] Race condition detected — concurrent update won, skipping', ctx);
         return;
       }
+
+      // Trigger reputation recalculation asynchronously
+      updateMerchantReputation(confirmedInvoice.merchantId.toString()).catch((err) =>
+        logger.error('[reputation] Async trigger failed in confirmation worker', { error: err.message })
+      );
 
       const merchant = await Merchant.findById(confirmedInvoice.merchantId);
 

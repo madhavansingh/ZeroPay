@@ -61,6 +61,74 @@ export function startNotificationWorker(): Worker {
             data: { type: 'invoice-expired', invoiceId },
           }, ctx);
         }
+      } else if (type === 'escrow-locked') {
+        const sends: Promise<void>[] = [];
+        if (merchantUserId) {
+          sends.push(safeNotify(merchantUserId, {
+            title: '🔒 Escrow Funds Locked',
+            body: `₹${amountInr} locked in contract for ${shopName}`,
+            data: { type: 'escrow-locked', invoiceId },
+          }, ctx));
+        }
+        if (customerUserId) {
+          sends.push(safeNotify(customerUserId, {
+            title: '🔒 Escrow Funds Locked',
+            body: `Your payment of ₹${amountInr} is securely locked in escrow`,
+            data: { type: 'escrow-locked', invoiceId },
+          }, ctx));
+        }
+        await Promise.all(sends);
+      } else if (type === 'milestone-released') {
+        const sends: Promise<void>[] = [];
+        if (merchantUserId) {
+          sends.push(safeNotify(merchantUserId, {
+            title: '💸 Milestone Released',
+            body: `Milestone payout of ₹${amountInr} released to your wallet`,
+            data: { type: 'milestone-released', invoiceId },
+          }, ctx));
+        }
+        if (customerUserId) {
+          sends.push(safeNotify(customerUserId, {
+            title: '💸 Milestone Released',
+            body: `Approved release of milestone payout of ₹${amountInr}`,
+            data: { type: 'milestone-released', invoiceId },
+          }, ctx));
+        }
+        await Promise.all(sends);
+      } else if (type === 'dispute-raised') {
+        const sends: Promise<void>[] = [];
+        if (merchantUserId) {
+          sends.push(safeNotify(merchantUserId, {
+            title: '⚠️ Escrow Disputed',
+            body: `A dispute has been raised on invoice of ₹${amountInr}`,
+            data: { type: 'dispute-raised', invoiceId },
+          }, ctx));
+        }
+        if (customerUserId) {
+          sends.push(safeNotify(customerUserId, {
+            title: '⚠️ Escrow Disputed',
+            body: `You raised a dispute on invoice of ₹${amountInr}`,
+            data: { type: 'dispute-raised', invoiceId },
+          }, ctx));
+        }
+        await Promise.all(sends);
+      } else if (type === 'refund-completed') {
+        const sends: Promise<void>[] = [];
+        if (merchantUserId) {
+          sends.push(safeNotify(merchantUserId, {
+            title: '🔄 Refund Completed',
+            body: `Refund of ₹${amountInr} processed for customer`,
+            data: { type: 'refund-completed', invoiceId },
+          }, ctx));
+        }
+        if (customerUserId) {
+          sends.push(safeNotify(customerUserId, {
+            title: '🔄 Refund Completed',
+            body: `Your refund of ₹${amountInr} has been completed`,
+            data: { type: 'refund-completed', invoiceId },
+          }, ctx));
+        }
+        await Promise.all(sends);
       }
 
       logger.info('[notification] Dispatch complete', ctx);

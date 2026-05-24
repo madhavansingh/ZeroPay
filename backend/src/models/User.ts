@@ -14,6 +14,10 @@ export interface IUser extends Document {
     paymentReceived: boolean;
     paymentConfirmed: boolean;
     invoiceExpired: boolean;
+    escrowUpdates: boolean;
+    disputeAlerts: boolean;
+    milestoneNotifications: boolean;
+    channels: ('push' | 'email')[];
   };
   onboardingStep: OnboardingStep;
   createdAt: Date;
@@ -44,7 +48,7 @@ const userSchema = new Schema<IUser>(
     },
     role: {
       type: String,
-      enum: ['customer', 'merchant', 'both'],
+      enum: ['customer', 'merchant', 'both', 'admin'],
       required: true,
       default: 'customer',
     },
@@ -69,6 +73,10 @@ const userSchema = new Schema<IUser>(
       paymentReceived: { type: Boolean, default: true },
       paymentConfirmed: { type: Boolean, default: true },
       invoiceExpired: { type: Boolean, default: false },
+      escrowUpdates: { type: Boolean, default: true },
+      disputeAlerts: { type: Boolean, default: true },
+      milestoneNotifications: { type: Boolean, default: true },
+      channels: { type: [String], enum: ['push', 'email'], default: ['push'] },
     },
     onboardingStep: {
       type: String,

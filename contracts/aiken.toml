@@ -1,7 +1,7 @@
-name = "zeropay-escrow"
+name = "zeropay/escrow"
 version = "0.0.1"
 
 [[dependencies]]
 name = "aiken-lang/stdlib"
-version = "1.9.0"
+version = "3.1.0"
 source = "github"

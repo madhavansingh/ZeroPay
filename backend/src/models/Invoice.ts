@@ -1,11 +1,19 @@
 import mongoose, { Document, Schema, Model } from 'mongoose';
 import type { InvoiceStatus } from '@zeropay/shared-types';
 
+export interface IMilestone {
+  title: string;
+  amountLovelace: number;
+  status: 'pending' | 'released' | 'disputed';
+  releasedAt?: Date;
+}
+
 export interface IInvoice extends Document {
   invoiceId: string;
   merchantId: mongoose.Types.ObjectId;
   merchantStringId: string;
   customerId?: mongoose.Types.ObjectId;
+  productId?: mongoose.Types.ObjectId;
   chatRoomId?: string;
   description?: string;
   // Immutable snapshots — set once at creation
@@ -29,6 +37,19 @@ export interface IInvoice extends Document {
   amountLovelaceVerified?: number;
   verificationResult?: 'amount-matched' | 'amount-mismatch' | 'address-mismatch';
   networkConfirmations?: number;
+  // Escrow state machine fields
+  escrowState: 'None' | 'Created' | 'PendingApproval' | 'Locked' | 'PartiallyReleased' | 'Released' | 'Refunded' | 'Disputed' | 'Resolved';
+  milestones: IMilestone[];
+  milestoneIndex: number;
+  totalMilestones: number;
+  isDisputed: boolean;
+  agreementHash?: string; // IPFS CID of terms
+  metadataHash?: string;
+  contractVersion: number;
+  escrowLockTxHash?: string;      // TX hash of the lock transaction
+  escrowCustomerAddress?: string; // Customer bech32 address used for locking
+  disputeTxHash?: string;         // TX hash of the dispute transaction
+  resolutionTxHash?: string;      // TX hash of the admin resolution TX
   createdAt: Date;
   updatedAt: Date;
 }
@@ -56,6 +77,11 @@ const invoiceSchema = new Schema<IInvoice>(
     customerId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
+      sparse: true,
+    },
+    productId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Product',
       sparse: true,
     },
     chatRoomId: {
@@ -121,6 +147,31 @@ const invoiceSchema = new Schema<IInvoice>(
       enum: ['amount-matched', 'amount-mismatch', 'address-mismatch'],
     },
     networkConfirmations: Number,
+    // Escrow state fields
+    escrowState: {
+      type: String,
+      enum: ['None', 'Created', 'PendingApproval', 'Locked', 'PartiallyReleased', 'Released', 'Refunded', 'Disputed', 'Resolved'],
+      default: 'None',
+      index: true,
+    },
+    milestones: [
+      {
+        title: { type: String, required: true },
+        amountLovelace: { type: Number, required: true },
+        status: { type: String, enum: ['pending', 'released', 'disputed'], default: 'pending' },
+        releasedAt: Date,
+      },
+    ],
+    milestoneIndex: { type: Number, default: 0 },
+    totalMilestones: { type: Number, default: 0 },
+    isDisputed: { type: Boolean, default: false },
+    agreementHash: String,
+    metadataHash: String,
+    contractVersion: { type: Number, default: 1 },
+    escrowLockTxHash: { type: String, sparse: true, match: /^[a-f0-9]{64}$/ },
+    escrowCustomerAddress: { type: String, match: /^addr(_test)?1[a-z0-9]+$/ },
+    disputeTxHash: { type: String, sparse: true, match: /^[a-f0-9]{64}$/ },
+    resolutionTxHash: { type: String, sparse: true, match: /^[a-f0-9]{64}$/ },
   },
   {
     timestamps: true,
@@ -145,8 +196,41 @@ invoiceSchema.pre('save', function (next) {
         return next(new Error(`Cannot modify immutable field: ${field}`));
       }
     }
+
+    // Verify escrowState transition validity on save
+    if (this.isModified('escrowState')) {
+      const from = this.modifiedPaths().includes('escrowState') ? (this as any)._originalEscrowState || 'None' : this.escrowState;
+      if (!isValidTransition(from, this.escrowState)) {
+        return next(new Error(`Invalid escrow state transition from "${from}" to "${this.escrowState}"`));
+      }
+    }
   }
   next();
 });
+
+// Cache original escrowState to check transitions in pre-save hook
+invoiceSchema.post('init', function (doc) {
+  (doc as any)._originalEscrowState = doc.escrowState;
+});
+
+export type EscrowState = 'None' | 'Created' | 'PendingApproval' | 'Locked' | 'PartiallyReleased' | 'Released' | 'Refunded' | 'Disputed' | 'Resolved';
+
+const VALID_TRANSITIONS: Record<EscrowState, EscrowState[]> = {
+  None: ['Created', 'Locked'],
+  Created: ['PendingApproval', 'Locked'],
+  PendingApproval: ['Locked'],
+  Locked: ['PartiallyReleased', 'Released', 'Disputed', 'Refunded'],
+  PartiallyReleased: ['PartiallyReleased', 'Released', 'Disputed', 'Refunded'],
+  Released: [],
+  Refunded: [],
+  Disputed: ['Resolved'],
+  Resolved: [],
+};
+
+export function isValidTransition(from: EscrowState, to: EscrowState): boolean {
+  if (from === to) return true;
+  const allowed = VALID_TRANSITIONS[from];
+  return allowed ? allowed.includes(to) : false;
+}
 
 export const Invoice: Model<IInvoice> = mongoose.model<IInvoice>('Invoice', invoiceSchema);

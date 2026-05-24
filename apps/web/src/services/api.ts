@@ -101,3 +101,84 @@ export const getChatRooms = () =>
 export const getChatRoom = (roomId: string) =>
   http.get<ApiResponse>(`/chat/rooms/${roomId}`).then((r) => r.data);
 
+// ─── Escrow ───────────────────────────────────────────────────────────────────
+
+export interface EscrowTxResult {
+  unsignedCbor: string;
+  scriptAddress: string;
+  invoiceId: string;
+}
+
+export interface EscrowStatus {
+  invoiceId: string;
+  status: string;
+  escrowState: string;
+  milestoneIndex: number;
+  totalMilestones: number;
+  isDisputed: boolean;
+  milestones: Array<{
+    title: string;
+    amountLovelace: number;
+    status: string;
+    releasedAt?: string;
+  }>;
+}
+
+/** Build unsigned lock TX — customer provides their bech32 address */
+export const buildEscrowLockTx = (invoiceId: string, customerAddress: string) =>
+  http
+    .post<ApiResponse<EscrowTxResult>>(`/escrow/${invoiceId}/lock`, { customerAddress })
+    .then((r) => r.data);
+
+/** Record confirmed lock TX hash */
+export const submitEscrowLock = (
+  invoiceId: string,
+  txHash: string,
+  customerAddress: string
+) =>
+  http
+    .post<ApiResponse>(`/escrow/${invoiceId}/lock/submit`, { txHash, customerAddress })
+    .then((r) => r.data);
+
+/** Build unsigned milestone release TX */
+export const buildEscrowRelease = (params: {
+  invoiceId: string;
+  customerAddress: string;
+  scriptUtxoTxHash: string;
+  scriptUtxoIndex: number;
+  payoutLovelace: number;
+}) =>
+  http
+    .post<ApiResponse<EscrowTxResult>>(`/escrow/${params.invoiceId}/release`, params)
+    .then((r) => r.data);
+
+/** Record confirmed milestone release TX hash */
+export const submitEscrowRelease = (
+  invoiceId: string,
+  txHash: string,
+  payoutLovelace: number
+) =>
+  http
+    .post<ApiResponse>(`/escrow/${invoiceId}/release/submit`, { txHash, payoutLovelace })
+    .then((r) => r.data);
+
+/** Build unsigned dispute TX */
+export const buildEscrowDispute = (params: {
+  invoiceId: string;
+  signerAddress: string;
+  scriptUtxoTxHash: string;
+  scriptUtxoIndex: number;
+}) =>
+  http
+    .post<ApiResponse<EscrowTxResult>>(`/escrow/${params.invoiceId}/dispute`, params)
+    .then((r) => r.data);
+
+/** Record confirmed dispute TX hash */
+export const submitEscrowDispute = (invoiceId: string, txHash: string) =>
+  http
+    .post<ApiResponse>(`/escrow/${invoiceId}/dispute/submit`, { txHash })
+    .then((r) => r.data);
+
+/** Get live escrow state for an invoice */
+export const getEscrowStatus = (invoiceId: string) =>
+  http.get<ApiResponse<EscrowStatus>>(`/escrow/${invoiceId}/status`).then((r) => r.data);

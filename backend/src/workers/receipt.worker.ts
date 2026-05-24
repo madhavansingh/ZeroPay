@@ -92,6 +92,22 @@ export function startReceiptWorker(): Worker {
         confirmedAt: invoice.confirmedAt?.toISOString() ?? new Date().toISOString(),
         settledAt: new Date().toISOString(),
         networkConfirmations: invoice.networkConfirmations ?? 3,
+        ...(invoice.escrowState && invoice.escrowState !== 'None' ? {
+          escrow: {
+            escrowState: invoice.escrowState,
+            milestoneIndex: invoice.milestoneIndex,
+            totalMilestones: invoice.totalMilestones,
+            isDisputed: invoice.isDisputed,
+            milestones: invoice.milestones.map((m) => ({
+              title: m.title,
+              amountLovelace: m.amountLovelace,
+              status: m.status,
+              releasedAt: m.releasedAt?.toISOString(),
+            })),
+            agreementHash: invoice.agreementHash,
+            metadataHash: invoice.metadataHash,
+          },
+        } : {}),
       };
 
       logger.info('[receipt] Pinning receipt to IPFS', ctx);

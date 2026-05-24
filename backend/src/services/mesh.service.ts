@@ -52,6 +52,12 @@ export async function buildPaymentTx(invoiceId: string, customerAddress: string)
 
   const txBuilder = new MeshTxBuilder({ fetcher: provider, verbose: false });
 
+  // Fetch customer UTxOs to select inputs from
+  const utxos = await provider.fetchAddressUTxOs(customerAddress);
+  if (!utxos || utxos.length === 0) {
+    throw new Error('No UTxOs found for the customer address. Please ensure the wallet is funded.');
+  }
+
   // Build the tx:
   // - Output: lovelace to merchant's payment address
   // - Metadata: CIP-674 key 674 with invoice info
@@ -59,6 +65,7 @@ export async function buildPaymentTx(invoiceId: string, customerAddress: string)
   const unsignedCbor = await txBuilder
     .txOut(invoice.paymentAddress, [{ unit: 'lovelace', quantity: invoice.amountLovelace.toString() }])
     .changeAddress(customerAddress)
+    .selectUtxosFrom(utxos)
     .metadataValue(METADATA_KEY, metadataValue)
     .complete();
 

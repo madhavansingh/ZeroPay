@@ -60,6 +60,8 @@ export default function DashboardPage() {
     amountPaise: number;
     status: InvoiceStatus;
     createdAt: string;
+    escrowState?: string;
+    isDisputed?: boolean;
   }> = ((invoicesData?.data as any)?.items ?? []);
 
   const stats = merchantData?.stats ?? {};
@@ -217,7 +219,21 @@ export default function DashboardPage() {
             recentInvoices.map((inv) => (
               <div key={inv.invoiceId} className="card flex items-center justify-between">
                 <div>
-                  <p className="font-medium text-sm">₹{paiseToinr(inv.amountPaise)}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-sm">₹{paiseToinr(inv.amountPaise)}</p>
+                    {inv.escrowState && inv.escrowState !== 'None' && (
+                      <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                        inv.escrowState === 'Locked' ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/20' :
+                        inv.escrowState === 'PartiallyReleased' ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20' :
+                        inv.escrowState === 'Released' ? 'bg-teal-500/15 text-teal-400 border border-teal-500/20' :
+                        inv.escrowState === 'Disputed' ? 'bg-red-500/15 text-red-400 border border-red-500/20' :
+                        inv.escrowState === 'Resolved' ? 'bg-purple-500/15 text-purple-400 border border-purple-500/20' :
+                        'bg-gray-500/15 text-gray-400 border border-gray-500/20'
+                      }`}>
+                        Escrow: {inv.escrowState}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-text-muted text-xs font-mono mt-0.5">{inv.invoiceId}</p>
                 </div>
                 <StatusBadge status={inv.status} />

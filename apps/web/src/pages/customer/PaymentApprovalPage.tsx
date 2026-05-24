@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Shield, CheckCircle, AlertCircle, Loader, ExternalLink } from 'lucide-react';
 import { bech32 } from 'bech32';
-import { getInvoice, buildTx, submitTx, createChatRoom } from '../../services/api';
+import { getInvoice, buildTx, submitTx, createChatRoom, buildEscrowLockTx, submitEscrowLock } from '../../services/api';
 import StatusBadge from '../../components/atoms/StatusBadge';
 import { database } from '../../services/firebase';
 import { ref, onValue } from 'firebase/database';
@@ -40,14 +40,23 @@ function bech32FromHex(hex: string): string {
   }
 }
 
-async function getFirstAvailableWallet(): Promise<CardanoApi> {
+async function getWalletApi(preferredKey?: string | null): Promise<{ api: CardanoApi; key: string }> {
   const walletKeys = ['eternl', 'lace', 'nami', 'flint', 'vespr', 'begin'];
-  for (const key of walletKeys) {
-    if (window.cardano?.[key]) {
-      return window.cardano[key]!.enable();
+  if (preferredKey && window.cardano?.[preferredKey]) {
+    try {
+      const api = await window.cardano[preferredKey]!.enable();
+      return { api, key: preferredKey };
+    } catch (err) {
+      console.warn(`Failed to auto-reconnect to preferred wallet: ${preferredKey}`, err);
     }
   }
-  throw new Error('No Cardano wallet detected. Please install Eternl or Lace.');
+  for (const key of walletKeys) {
+    if (window.cardano?.[key]) {
+      const api = await window.cardano[key]!.enable();
+      return { api, key };
+    }
+  }
+  throw new Error('No Cardano wallet detected. Please install Eternl, Lace, or Nami.');
 }
 
 function mapWalletError(err: any): string {
@@ -95,6 +104,11 @@ export default function PaymentApprovalPage() {
   const [txHash, setTxHash] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [liveStatus, setLiveStatus] = useState<InvoiceStatus | null>(null);
+  const [escrowState, setEscrowState] = useState<string | null>(null);
+  const [milestones, setMilestones] = useState<any[]>([]);
+  const [milestoneIndex, setMilestoneIndex] = useState<number>(0);
+  const [connectedWallet, setConnectedWallet] = useState<string | null>(() => localStorage.getItem('zeropay_connected_wallet'));
+  const [walletLoading, setWalletLoading] = useState(false);
 
   // merchantId could be an invoiceId
   const isInvoiceId = merchantId?.startsWith('INV-');
@@ -126,7 +140,33 @@ export default function PaymentApprovalPage() {
 
   const invoice = invoiceRes?.data;
 
-  // 2. Real-time Firebase RTDB listener for status
+  // Initialize values from invoice query
+  useEffect(() => {
+    if (invoice) {
+      if (invoice.escrowState) setEscrowState(invoice.escrowState);
+      if (invoice.milestones) setMilestones(invoice.milestones);
+      if (invoice.milestoneIndex !== undefined) setMilestoneIndex(invoice.milestoneIndex);
+    }
+  }, [invoice]);
+
+  // Auto-reconnect wallet session if stored in localStorage
+  useEffect(() => {
+    const savedWallet = localStorage.getItem('zeropay_connected_wallet');
+    if (savedWallet && window.cardano?.[savedWallet]) {
+      setWalletLoading(true);
+      window.cardano[savedWallet]!.enable()
+        .then(() => {
+          setConnectedWallet(savedWallet);
+        })
+        .catch((e) => {
+          console.warn('Silent wallet auto-reconnection failed:', e);
+          localStorage.removeItem('zeropay_connected_wallet');
+        })
+        .finally(() => setWalletLoading(false));
+    }
+  }, []);
+
+  // 2. Real-time Firebase RTDB listener for status and escrow details
   useEffect(() => {
     if (!isInvoiceId || !merchantId) return;
 
@@ -135,14 +175,27 @@ export default function PaymentApprovalPage() {
     }
 
     const statusRef = ref(database, `/invoices/${merchantId}`);
-    const unsubscribe = onValue(statusRef, (snap) => {
+    const unsubscribeStatus = onValue(statusRef, (snap) => {
       const status = snap.val();
       if (status) {
         setLiveStatus(status as InvoiceStatus);
       }
     });
 
-    return () => unsubscribe();
+    const escrowRef = ref(database, `/escrow/${merchantId}`);
+    const unsubscribeEscrow = onValue(escrowRef, (snap) => {
+      const data = snap.val();
+      if (data) {
+        if (data.escrowState) setEscrowState(data.escrowState);
+        if (data.milestones) setMilestones(data.milestones);
+        if (data.milestoneIndex !== undefined) setMilestoneIndex(data.milestoneIndex);
+      }
+    });
+
+    return () => {
+      unsubscribeStatus();
+      unsubscribeEscrow();
+    };
   }, [merchantId, isInvoiceId, invoice?.status]);
 
   const handlePay = async () => {
@@ -151,15 +204,22 @@ export default function PaymentApprovalPage() {
     setErrorMsg('');
 
     try {
-      // 1. Get CIP-30 wallet
-      const api = await getFirstAvailableWallet();
+      // 1. Get CIP-30 wallet and store preference
+      const { api, key } = await getWalletApi(connectedWallet);
+      setConnectedWallet(key);
+      localStorage.setItem('zeropay_connected_wallet', key);
+
       const usedAddresses = await api.getUsedAddresses();
       const hexAddress = usedAddresses[0] ?? (await api.getChangeAddress());
       if (!hexAddress) throw new Error('Could not retrieve wallet address');
       const address = bech32FromHex(hexAddress);
 
       // 2. Build unsigned CBOR from backend passing customer change address
-      const buildRes = await buildTx(invoice.invoiceId, address);
+      const isEscrow = invoice.escrowState && invoice.escrowState !== 'None';
+      const buildRes = isEscrow
+        ? await buildEscrowLockTx(invoice.invoiceId, address)
+        : await buildTx(invoice.invoiceId, address);
+
       if (!buildRes.success || !buildRes.data) throw new Error('Failed to build transaction');
 
       // 3. Sign client-side — keys never leave browser
@@ -170,7 +230,11 @@ export default function PaymentApprovalPage() {
       setTxHash(hash);
 
       // 5. Notify backend of the tx hash
-      await submitTx({ invoiceId: invoice.invoiceId, txHash: hash });
+      if (isEscrow) {
+        await submitEscrowLock(invoice.invoiceId, hash, address);
+      } else {
+        await submitTx({ invoiceId: invoice.invoiceId, txHash: hash });
+      }
 
       setStep('submitted');
     } catch (err: unknown) {
@@ -219,13 +283,14 @@ export default function PaymentApprovalPage() {
 
   // Render visual stepper when transaction has been submitted
   if (showStepper) {
+    const isEscrow = invoice && (invoice.totalMilestones ?? 0) > 0;
     const isStep1Done = currentStatus !== 'pending';
     
     const isStep2Active = currentStatus === 'submitted' || currentStatus === 'confirming';
     const isStep2Done = currentStatus === 'confirmed' || currentStatus === 'settled';
     
     const isStep3Active = currentStatus === 'confirmed';
-    const isStep3Done = currentStatus === 'settled';
+    const isStep3Done = isEscrow ? (currentStatus === 'confirmed' || currentStatus === 'settled') : currentStatus === 'settled';
 
     return (
       <div className="min-h-screen bg-surface flex flex-col items-center justify-center px-6 animate-fade-in">
@@ -241,11 +306,13 @@ export default function PaymentApprovalPage() {
           )}
 
           <h1 className="text-2xl font-bold mb-2">
-            {isStep3Done ? 'Payment Settled!' : 'Verifying Payment...'}
+            {isStep3Done 
+              ? (isEscrow ? 'Funds Locked in Escrow!' : 'Payment Settled!') 
+              : 'Verifying Payment...'}
           </h1>
           <p className="text-text-secondary mb-8">
             {isStep3Done 
-              ? 'Your Cardano payment has been settled and receipt generated.'
+              ? (isEscrow ? 'Your funds have been securely locked in the escrow smart contract.' : 'Your Cardano payment has been settled and receipt generated.')
               : 'Please wait while we verify your transaction on the Cardano blockchain.'}
           </p>
 
@@ -295,9 +362,13 @@ export default function PaymentApprovalPage() {
                 {isStep3Done ? '✓' : '3'}
               </div>
               <div>
-                <p className="font-semibold text-sm">Receipt & Settlement</p>
+                <p className="font-semibold text-sm">
+                  {isEscrow ? 'Escrow Protection Active' : 'Receipt & Settlement'}
+                </p>
                 <p className="text-xs text-text-secondary">
-                  {isStep3Active ? 'Pinning receipt to IPFS...' : isStep3Done ? 'Receipt generated & settled' : 'Pending settlement'}
+                  {isEscrow 
+                    ? (isStep3Done ? 'Funds secured' : 'Securing funds...') 
+                    : (isStep3Active ? 'Pinning receipt to IPFS...' : isStep3Done ? 'Receipt generated & settled' : 'Pending settlement')}
                 </p>
               </div>
             </div>
@@ -324,10 +395,10 @@ export default function PaymentApprovalPage() {
             {isStep3Done && invoice && (
               <button
                 id="payment-receipt-btn"
-                onClick={() => navigate(`/receipt/${invoice.invoiceId}`)}
+                onClick={() => navigate(isEscrow ? `/customer/chats` : `/receipt/${invoice.invoiceId}`)}
                 className="btn-primary w-full"
               >
-                View Receipt
+                {isEscrow ? 'Go to Chat Room' : 'View Receipt'}
               </button>
             )}
             <button 
@@ -412,6 +483,49 @@ export default function PaymentApprovalPage() {
               </div>
             ))}
           </div>
+
+          {(invoice.totalMilestones ?? 0) > 0 && (
+            <div className="card space-y-4 bg-surface-card border border-surface-border">
+              <h3 className="font-semibold text-sm text-text-primary border-b border-surface-border pb-2">
+                Escrow Milestones Payout Schedule ({invoice.totalMilestones ?? 0})
+              </h3>
+              <div className="relative pl-6 border-l-2 border-surface-border space-y-6">
+                {(milestones.length > 0 ? milestones : (invoice.milestones || [])).map((m, idx) => {
+                  const isCurrent = idx === milestoneIndex;
+                  const isReleased = m.status === 'released' || idx < milestoneIndex;
+                  const isDisputed = m.status === 'disputed';
+                  
+                  return (
+                    <div key={idx} className="relative">
+                      {/* Node circle icon */}
+                      <div className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border-2 ${
+                        isReleased 
+                          ? 'bg-teal-500 border-teal-500' 
+                          : isDisputed
+                            ? 'bg-red-500 border-red-500 animate-pulse'
+                            : isCurrent 
+                              ? 'bg-surface border-teal-500 animate-pulse' 
+                              : 'bg-surface border-text-muted'
+                      }`} />
+                      <div>
+                        <div className="flex justify-between items-start">
+                          <span className={`text-sm font-medium ${isReleased ? 'text-text-muted line-through font-normal' : 'text-text-primary'}`}>
+                            {m.title}
+                          </span>
+                          <span className="font-mono text-xs text-text-secondary">
+                            {(m.amountLovelace / 1_000_000).toFixed(2)} ADA
+                          </span>
+                        </div>
+                        <p className="text-xs text-text-secondary mt-0.5">
+                          {isReleased ? 'Released' : isDisputed ? 'Disputed' : isCurrent ? 'Active Escrow Milestone' : 'Pending Lock'}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="flex items-start gap-3 bg-teal-600/5 border border-teal-600/20 rounded-2xl p-4">
             <Shield size={18} className="text-teal-400 shrink-0 mt-0.5" />

@@ -4,8 +4,10 @@
   "private": true,
   "workspaces": [
     "apps/web",
+    "apps/mobile",
     "backend",
-    "packages/shared-types"
+    "packages/shared-types",
+    "packages/sdk"
   ],
   "scripts": {
     "dev:backend": "npm run dev --workspace=backend",
