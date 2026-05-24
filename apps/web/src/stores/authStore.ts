@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { User, UserRole, OnboardingStep } from '@zeropay/shared-types';
 
 interface AuthState {
+  // Auth state — NOT persisted (always synced from backend on mount)
   user: User | null;
   firebaseUid: string | null;
   idToken: string | null;
@@ -10,6 +11,11 @@ interface AuthState {
   isAuthenticated: boolean;
   activeRoleView: 'merchant' | 'customer';
   walletProvider: string | null;
+
+  // Device identity — persisted (survives logout, unique per browser)
+  deviceId: string | null;
+
+  // Actions
   setUser: (user: User) => void;
   setIdToken: (token: string) => void;
   setFirebaseUid: (uid: string) => void;
@@ -20,18 +26,24 @@ interface AuthState {
   updateWallet: (address: string, provider: string) => void;
   setWalletProvider: (provider: string | null) => void;
   logout: () => void;
+  reset: () => void;
 }
+
+const INITIAL_STATE = {
+  user: null,
+  firebaseUid: null,
+  idToken: null,
+  isLoading: true,
+  isAuthenticated: false,
+  activeRoleView: 'merchant' as const,
+  walletProvider: null,
+};
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      user: null,
-      firebaseUid: null,
-      idToken: null,
-      isLoading: true,
-      isAuthenticated: false,
-      activeRoleView: 'merchant',
-      walletProvider: null,
+      ...INITIAL_STATE,
+      deviceId: null,
 
       setUser: (user) =>
         set((state) => ({
@@ -48,6 +60,7 @@ export const useAuthStore = create<AuthState>()(
               ? 'customer'
               : 'merchant',
         })),
+
       setIdToken: (idToken) => set({ idToken }),
       setFirebaseUid: (firebaseUid) => set({ firebaseUid }),
       setLoading: (isLoading) => set({ isLoading }),
@@ -71,23 +84,20 @@ export const useAuthStore = create<AuthState>()(
 
       setWalletProvider: (walletProvider) => set({ walletProvider }),
 
-      logout: () =>
-        set({
-          user: null,
-          firebaseUid: null,
-          idToken: null,
-          isAuthenticated: false,
-          activeRoleView: 'merchant',
-          walletProvider: null,
-        }),
+      // logout(): clears all non-device auth state from memory
+      // The calling code (useAuth.tsx) is responsible for clearing localStorage
+      logout: () => set({ ...INITIAL_STATE }),
+
+      // reset(): same as logout but also resets loading to true
+      reset: () => set({ ...INITIAL_STATE, isLoading: true }),
     }),
     {
       name: 'zeropay-auth',
+      // CRITICAL: Only persist deviceId — NEVER persist user/role/wallet/onboarding
+      // These are always re-synced from backend on every app mount.
+      // Persisting auth state causes stale role redirects after logout.
       partialize: (state) => ({
-        user: state.user,
-        firebaseUid: state.firebaseUid,
-        activeRoleView: state.activeRoleView,
-        walletProvider: state.walletProvider,
+        deviceId: state.deviceId ?? crypto.randomUUID(),
       }),
     }
   )

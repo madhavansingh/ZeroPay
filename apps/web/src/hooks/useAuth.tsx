@@ -70,9 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Listen to Firebase auth state
   useEffect(() => {
-    console.log('[Auth] Subscribing to onAuthStateChanged...');
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      console.log(`[Auth] Auth state changed: firebaseUser=${firebaseUser ? firebaseUser.uid : 'null'}`);
       setLoading(true);
       if (firebaseUser) {
         setFirebaseUid(firebaseUser.uid);
@@ -84,15 +82,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.warn('[Auth] Failed to obtain FCM token:', e);
           }
 
-          console.log('[Auth] Syncing user session with backend...');
           const response = await syncUser({
             displayName: firebaseUser.displayName ?? undefined,
             fcmToken,
           });
           if (response.success && response.data) {
-            console.log('[Auth] User sync success:', JSON.stringify(response.data));
             setUser(response.data);
-            console.log(`[Auth] Role restored: role=${response.data.role}, onboardingStep=${response.data.onboardingStep}`);
           } else {
             console.error('[Auth] User sync returned unsuccessful response. Clearing session.');
             localStorage.removeItem('zeropay-auth');
@@ -106,26 +101,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setLoading(false);
         }
       } else {
-        console.log('[Auth] No Firebase user detected. Resetting auth store...');
         storeLogout();
         setLoading(false);
       }
     });
 
     return () => {
-      console.log('[Auth] Unsubscribing from onAuthStateChanged');
       unsubscribe();
     };
   }, []);
 
   const sendOtp = async (phone: string): Promise<void> => {
     if (isSending) {
-      console.log('[Auth] Already sending OTP. Call ignored.');
       return;
     }
     setIsSending(true);
     setError(null);
-    console.log(`[Auth] Initiating OTP send to: ${phone}`);
 
     let verifier: RecaptchaVerifier | null = null;
     try {
@@ -143,7 +134,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setConfirmation(result);
       setPhoneNumber(phone);
       setIsOtpSent(true);
-      console.log('[Auth] OTP sent successfully');
     } catch (err: unknown) {
       console.error('[Auth] Failed to send OTP:', err);
       if (verifier) {
@@ -163,7 +153,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const verifyOtp = async (otp: string): Promise<void> => {
     if (isVerifying) {
-      console.log('[Auth] Already verifying OTP. Call ignored.');
       return;
     }
     if (!confirmation) {
@@ -172,11 +161,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setIsVerifying(true);
     setError(null);
-    console.log('[Auth] Verifying OTP...');
 
     try {
       await confirmation.confirm(otp);
-      console.log('[Auth] OTP verification request succeeded on Firebase');
       // onAuthStateChanged will handle backend sync and routing next
     } catch (err: unknown) {
       console.error('[Auth] OTP verification failed:', err);
@@ -189,39 +176,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async (): Promise<void> => {
-    console.log('[Auth] Initiating logout...');
+    // Step 1: Backend reset (non-fatal if fails)
     try {
       if (auth.currentUser) {
         await logoutUser();
-        console.log('[Auth] Backend logout user reset complete');
       }
     } catch (e) {
-      console.warn('[Auth] Backend logout user reset failed (might be already unauthenticated):', e);
+      console.warn('[Auth] Backend logout failed (non-fatal):', e);
     }
 
+    // Step 2: Firebase signOut (must succeed)
     try {
       await signOut(auth);
-      console.log('[Auth] Firebase signOut complete');
     } catch (e) {
       console.error('[Auth] Firebase signOut error:', e);
     }
 
+    // Step 3: React Query cache
     try {
       queryClient.clear();
-      console.log('[Auth] React Query cache cleared');
     } catch (e) {
       console.error('[Auth] Failed to clear query cache:', e);
     }
 
-    storeLogout();
+    // Step 4: Zustand in-memory reset + persisted storage clear
+    useAuthStore.getState().reset();
     try {
       useAuthStore.persist.clearStorage();
-      console.log('[Auth] Zustand persisted store cleared');
     } catch (e) {
-      console.error('[Auth] Failed to clear Zustand persisted store:', e);
+      console.error('[Auth] Failed to clear Zustand storage:', e);
     }
-    localStorage.removeItem('zeropay-auth');
-    console.log('[Auth] Logout success. Local session artifacts deleted.');
+
+    // Step 5: Nuke all browser storage artifacts
+    localStorage.clear();
+    sessionStorage.clear();
+
+    // Step 6: Hard redirect — bypasses React Router, ensures clean state
+    window.location.replace('/');
   };
 
   return (

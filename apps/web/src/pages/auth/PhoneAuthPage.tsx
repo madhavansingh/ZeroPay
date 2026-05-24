@@ -17,7 +17,6 @@ export default function PhoneAuthPage() {
 
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
-      console.log('[PhoneAuth] User authenticated and loading complete. Redirecting to home...');
       navigate('/', { replace: true });
     }
   }, [isAuthenticated, isLoading, navigate]);

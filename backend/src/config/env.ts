@@ -39,6 +39,13 @@ const envSchema = z.object({
   HIGH_VALUE_THRESHOLD_USD: z.string().default('500').transform(Number),
   HIGH_VALUE_CONFIRMATIONS: z.string().default('6').transform(Number),
   INVOICE_EXPIRY_DEFAULT_SECONDS: z.string().default('600').transform(Number),
+
+  // Admin UI (Bull Board)
+  ADMIN_USERNAME: z.string().default('zeropay-admin'),
+  ADMIN_PASSWORD: z.string().default('changeme-in-production'),
+
+  // Sentry (optional)
+  SENTRY_DSN: z.string().url().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

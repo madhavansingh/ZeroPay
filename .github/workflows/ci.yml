@@ -28,10 +28,10 @@ jobs:
         run: npm ci
 
       - name: Type-check backend
-        run: npm run type-check --workspace=backend
+        run: npm run type-check:backend
 
       - name: Type-check frontend
-        run: npx tsc --noEmit --project apps/web/tsconfig.json
+        run: npm run type-check:web
 
   # ── Backend build ────────────────────────────────────────────────────────────
   build-backend:
@@ -51,7 +51,7 @@ jobs:
         run: npm ci
 
       - name: Build backend
-        run: npm run build --workspace=backend
+        run: npm run build:backend
 
   # ── Frontend build ───────────────────────────────────────────────────────────
   build-frontend:
@@ -79,7 +79,7 @@ jobs:
         run: npm ci
 
       - name: Build frontend
-        run: npm run build --workspace=apps/web
+        run: npm run build:web
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

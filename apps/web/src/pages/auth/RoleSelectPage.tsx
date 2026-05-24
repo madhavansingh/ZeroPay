@@ -3,18 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, MessageSquare } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { updateRoleAndStep } from '../../services/api';
-import { User } from '@zeropay/shared-types';
 
 export default function RoleSelectPage() {
   const [selected, setSelected] = useState<'customer' | 'merchant' | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { user, setUser, updateOnboardingStep, updateRole } = useAuthStore();
+  const { user, setUser } = useAuthStore();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (user?.onboardingStep === 'complete') {
-      console.log('[RoleSelect] User onboarding already complete. Redirecting to home...');
       navigate('/', { replace: true });
     }
   }, [user?.onboardingStep, navigate]);
@@ -27,23 +25,21 @@ export default function RoleSelectPage() {
       if (selected === 'merchant') {
         const response = await updateRoleAndStep({ role: 'merchant', onboardingStep: 'role-selected' });
         if (response.success && response.data) {
+          // Sync full user from backend — do NOT read role from local state
           setUser(response.data);
-        }
-        updateRole('merchant');
-        updateOnboardingStep('role-selected');
-        if (user?.walletAddress) {
-          navigate('/onboarding/shop');
-        } else {
-          navigate('/onboarding/wallet');
+          if (response.data.walletAddress) {
+            navigate('/onboarding/shop');
+          } else {
+            navigate('/onboarding/wallet');
+          }
         }
       } else {
         const response = await updateRoleAndStep({ role: 'customer', onboardingStep: 'complete' });
         if (response.success && response.data) {
+          // Sync full user from backend — navigate based on response.data.role only
           setUser(response.data);
+          navigate('/customer/chats');
         }
-        updateRole('customer');
-        updateOnboardingStep('complete');
-        navigate('/customer/chats');
       }
     } catch (err: unknown) {
       console.error('Failed to update role:', err);

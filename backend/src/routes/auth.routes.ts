@@ -66,14 +66,7 @@ router.post(
 
       res.json({
         success: true,
-        data: {
-          id: user.id,
-          firebaseUid: user.firebaseUid,
-          displayName: user.displayName,
-          role: user.role,
-          onboardingStep: user.onboardingStep,
-          walletAddress: user.walletAddress,
-        },
+        data: user,
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Sync failed';
@@ -138,33 +131,29 @@ router.put(
       const { role, onboardingStep } = req.body;
       const { user } = req;
 
-      if (role) {
-        if (!['customer', 'merchant', 'both'].includes(role)) {
-          res.status(400).json({ success: false, error: 'Invalid role' });
-          return;
-        }
-        user.role = role;
+      if (!role || !['customer', 'merchant', 'both'].includes(role)) {
+        res.status(400).json({ success: false, error: 'Invalid role' });
+        return;
       }
 
+      const updateFields: Record<string, string> = { role };
       if (onboardingStep) {
         if (!['new', 'role-selected', 'wallet-complete', 'shop-complete', 'complete'].includes(onboardingStep)) {
           res.status(400).json({ success: false, error: 'Invalid onboarding step' });
           return;
         }
-        user.onboardingStep = onboardingStep;
+        updateFields.onboardingStep = onboardingStep;
       }
 
-      await user.save();
+      const updatedUser = await User.findOneAndUpdate(
+        { firebaseUid: user.firebaseUid },
+        { $set: updateFields },
+        { new: true }
+      );
+
       res.json({
         success: true,
-        data: {
-          id: user.id,
-          firebaseUid: user.firebaseUid,
-          displayName: user.displayName,
-          role: user.role,
-          onboardingStep: user.onboardingStep,
-          walletAddress: user.walletAddress,
-        },
+        data: updatedUser,
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Update failed';
@@ -188,18 +177,16 @@ router.post(
         await Merchant.deleteOne({ _id: merchant._id });
       }
 
-      // 2. Reset user auth and onboarding fields explicitly using updateOne to bypass any validation/regex index constraints on null/undefined
-      await User.updateOne(
-        { _id: user.id },
+      // 2. Atomically reset user state on backend — source of truth
+      await User.findOneAndUpdate(
+        { firebaseUid: req.user.firebaseUid },
         {
           $set: {
             role: 'customer',
             onboardingStep: 'new',
-          },
-          $unset: {
-            walletAddress: 1,
-            walletProvider: 1,
-            stakeAddress: 1,
+            walletAddress: null,
+            walletProvider: null,
+            stakeAddress: null,
           },
         }
       );

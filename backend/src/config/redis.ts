@@ -1,6 +1,7 @@
 import { Redis } from '@upstash/redis';
 import IORedis from 'ioredis';
 import { env } from './env';
+import { logger } from './logger';
 
 // ─── HTTP Redis (Upstash REST — for caching, rate limiting) ──────────────────
 // Used with @upstash/redis — works in serverless, stateless requests
@@ -20,8 +21,8 @@ export const bullMqRedis = new IORedis(env.UPSTASH_REDIS_TLS_URL, {
   retryStrategy: (times) => Math.min(times * 50, 2000),
 });
 
-bullMqRedis.on('connect', () => console.log('✅ BullMQ Redis connected'));
-bullMqRedis.on('error', (err) => console.error('BullMQ Redis error:', err));
+bullMqRedis.on('connect', () => logger.info('BullMQ Redis connected'));
+bullMqRedis.on('error', (err) => logger.error('BullMQ Redis error', { detail: err instanceof Error ? err.message : String(err) }));
 
 // ─── Cache helpers ────────────────────────────────────────────────────────────
 
