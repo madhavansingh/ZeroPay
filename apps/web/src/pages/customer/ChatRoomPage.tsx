@@ -23,6 +23,7 @@ export default function ChatRoomPage() {
   const [loading, setLoading] = useState(true);
   const [shopName, setShopName] = useState('');
   const [text, setText] = useState('');
+  const [connected, setConnected] = useState(true);
   const [roomData, setRoomData] = useState<any>(null);
   const [showInvoiceSheet, setShowInvoiceSheet] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -34,7 +35,7 @@ export default function ChatRoomPage() {
 
     // Load room metadata
     const roomMetaRef = ref(database, `/chatrooms/${roomId}`);
-    onValue(roomMetaRef, (snap: DataSnapshot) => {
+    const unsubscribeMeta = onValue(roomMetaRef, (snap: DataSnapshot) => {
       const data = snap.val();
       if (data) {
         setRoomData(data);
@@ -57,7 +58,17 @@ export default function ChatRoomPage() {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    // Monitor connectivity
+    const connectedRef = ref(database, '/.info/connected');
+    const unsubscribeConnected = onValue(connectedRef, (snap) => {
+      setConnected(!!snap.val());
+    });
+
+    return () => {
+      unsubscribeMeta();
+      unsubscribe();
+      unsubscribeConnected();
+    };
   }, [roomId]);
 
   useEffect(() => {
@@ -97,6 +108,14 @@ export default function ChatRoomPage() {
           <p className="text-text-muted text-xs">ZeroPay merchant</p>
         </div>
       </div>
+
+      {/* Connectivity Warning Banner */}
+      {!connected && (
+        <div className="bg-amber-600/90 text-white px-4 py-2 text-xs flex items-center justify-center gap-2 font-semibold animate-slide-down shrink-0">
+          <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+          Connection lost. Reconnecting to live updates...
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">

@@ -2,14 +2,16 @@ import 'dotenv/config';
 import { initSentry, Sentry } from './config/sentry';
 // Init Sentry before everything else
 initSentry();
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import basicAuth from 'express-basic-auth';
 import mongoose from 'mongoose';
+import { randomUUID } from 'crypto';
 
 import { env } from './config/env';
+import { logger } from './config/logger';
 import { connectDatabase } from './config/db';
 import { initFirebase } from './config/firebase-admin';
 import { bullMqRedis } from './config/redis';
@@ -21,6 +23,7 @@ import paymentRoutes from './routes/payment.routes';
 import priceRoutes from './routes/price.routes';
 import chatRoutes from './routes/chat.routes';
 import dashboardRoutes from './routes/dashboard.routes';
+import diagnosticsRouter from './routes/diagnostics.routes';
 
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { startConfirmationWorker } from './workers/confirmation.worker';
@@ -30,17 +33,35 @@ import { startExpiryWorker } from './workers/expiry.worker';
 import { startDailyStatsWorker } from './workers/dailyStats.worker';
 import { dailyStatsQueue } from './queues/queue.definitions';
 import { createAdminRouter } from './admin/bullboard';
+import type { Worker } from 'bullmq';
+
+// ── Global error handlers (process-level safety net) ─────────────────────────
+process.on('uncaughtException', (err: Error) => {
+  logger.error('Uncaught exception — shutting down', { detail: err.message });
+  Sentry.captureException(err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason: unknown) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  logger.error('Unhandled promise rejection', { detail: msg });
+  Sentry.captureException(reason instanceof Error ? reason : new Error(msg));
+  // Do not exit — log and continue for non-fatal rejections
+});
 
 async function bootstrap(): Promise<void> {
   initFirebase();
   await connectDatabase();
 
-  const app = express();
+  // ── Mongoose connection lifecycle logging ──────────────────────────────────
+  mongoose.connection.on('disconnected', () => logger.warn('MongoDB disconnected'));
+  mongoose.connection.on('reconnected', () => logger.info('MongoDB reconnected'));
+  mongoose.connection.on('error', (err) => logger.error('MongoDB error', { detail: err.message }));
 
+  const app = express();
   app.set('trust proxy', 1);
 
   app.use(helmet({
-    // Allow Bull Board UI assets
     contentSecurityPolicy: env.NODE_ENV === 'production' ? undefined : false,
   }));
   app.use(
@@ -53,31 +74,21 @@ async function bootstrap(): Promise<void> {
   app.use(express.urlencoded({ extended: true }));
   app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-  // ── Health check ─────────────────────────────────────────────────────────────
-  app.get('/health', async (_req, res) => {
-    const mongoConnected = mongoose.connection.readyState === 1;
-    let redisConnected = false;
-    try {
-      const isReady = bullMqRedis.status === 'ready';
-      const ping = await bullMqRedis.ping();
-      redisConnected = isReady && ping === 'PONG';
-    } catch (err) {
-      console.error('[health] Redis ping failed:', err);
-    }
-
-    const isHealthy = mongoConnected && redisConnected;
-
-    res.status(isHealthy ? 200 : 503).json({
-      status: isHealthy ? 'healthy' : 'unhealthy',
-      timestamp: new Date().toISOString(),
-      env: env.NODE_ENV,
-      network: env.BLOCKFROST_NETWORK,
-      services: {
-        mongodb: mongoConnected ? 'connected' : 'disconnected',
-        redis: redisConnected ? 'connected' : 'disconnected',
-      },
+  // ── Request correlation ID + duration tracking ─────────────────────────────
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const requestId = (req.headers['x-request-id'] as string) || randomUUID();
+    res.locals['requestId'] = requestId;
+    res.setHeader('x-request-id', requestId);
+    const start = Date.now();
+    res.on('finish', () => {
+      const durationMs = Date.now() - start;
+      logger.info(`${req.method} ${req.path} ${res.statusCode}`, { requestId, durationMs });
     });
+    next();
   });
+
+  // ── Diagnostics / health routes ────────────────────────────────────────────
+  app.use('/health', diagnosticsRouter);
 
   // ── Bull Board admin UI (basic auth protected) ────────────────────────────
   const adminUser = process.env.ADMIN_USERNAME ?? 'zeropay-admin';
@@ -93,66 +104,83 @@ async function bootstrap(): Promise<void> {
     createAdminRouter()
   );
 
-  // ── API routes ───────────────────────────────────────────────────────────────
+  // ── API routes ────────────────────────────────────────────────────────────
   app.use('/api/v1/auth', authRoutes);
   app.use('/api/v1/merchant', merchantRoutes);
-  app.use('/api/v1/merchant', dashboardRoutes);   // GET /api/v1/merchant/dashboard
+  app.use('/api/v1/merchant', dashboardRoutes);
   app.use('/api/v1/invoices', invoiceRoutes);
   app.use('/api/v1/payments', paymentRoutes);
   app.use('/api/v1/price', priceRoutes);
   app.use('/api/v1/chat', chatRoutes);
 
-  // ── Sentry Error Handler (Must be registered BEFORE custom error handlers) ───
+  // ── Sentry Error Handler (must be before custom error handlers) ───────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   app.use(Sentry.expressErrorHandler() as any);
 
-  // ── 404 + Custom error handlers ──────────────────────────────────────────────
+  // ── 404 + Custom error handlers ──────────────────────────────────────────
   app.use(notFound);
   app.use(errorHandler);
 
-  // ── Start server ──────────────────────────────────────────────────────────────
+  // ── Start server ──────────────────────────────────────────────────────────
   const server = app.listen(env.PORT, () => {
-    console.log(`🚀 ZeroPay API  →  http://localhost:${env.PORT}  [${env.NODE_ENV}]`);
-    console.log(`   Cardano:      ${env.BLOCKFROST_NETWORK}`);
-    console.log(`   Admin UI:     http://localhost:${env.PORT}/admin/queues`);
+    logger.info(`ZeroPay API started`, { port: env.PORT, env: env.NODE_ENV, network: env.BLOCKFROST_NETWORK });
+    logger.info(`Admin UI: http://localhost:${env.PORT}/admin/queues`);
   });
 
-  // ── BullMQ workers ────────────────────────────────────────────────────────────
-  startConfirmationWorker();
-  startReceiptWorker();
-  startNotificationWorker();
-  startDailyStatsWorker();
-  await startExpiryWorker();
+  // ── BullMQ workers ────────────────────────────────────────────────────────
+  const workers: Worker[] = [];
+  workers.push(startConfirmationWorker());
+  workers.push(startReceiptWorker());
+  workers.push(startNotificationWorker());
+  workers.push(startDailyStatsWorker());
+  workers.push(await startExpiryWorker());
 
   // Schedule nightly stats sync at 00:05 IST (18:35 UTC)
   await dailyStatsQueue.add(
     'nightly-sync',
     {},
     {
-      repeat: { pattern: '35 18 * * *' }, // 00:05 IST daily
+      repeat: { pattern: '35 18 * * *' },
       jobId: 'daily-stats-nightly',
       removeOnComplete: { count: 7 },
       removeOnFail: { count: 30 },
     }
   );
 
-  console.log('✅ All BullMQ workers started');
+  logger.info('All BullMQ workers started');
 
-  // ── Graceful shutdown ─────────────────────────────────────────────────────────
+  // ── Graceful shutdown ─────────────────────────────────────────────────────
   const shutdown = async (signal: string): Promise<void> => {
-    console.log(`\n[${signal}] Shutting down gracefully...`);
+    logger.info(`Graceful shutdown initiated`, { signal });
+
     server.close(async () => {
+      logger.info('HTTP server closed — draining workers...');
+      // Close all BullMQ workers gracefully
+      await Promise.allSettled(workers.map((w) => w.close()));
+      logger.info('Workers drained');
+
       await bullMqRedis.quit();
-      console.log('✅ Shutdown complete');
+      logger.info('Redis connection closed');
+
+      await mongoose.disconnect();
+      logger.info('MongoDB connection closed');
+
+      logger.info('Shutdown complete');
       process.exit(0);
     });
+
+    // Force exit after 30s if graceful shutdown stalls
+    setTimeout(() => {
+      logger.error('Forced shutdown after 30s timeout');
+      process.exit(1);
+    }, 30_000);
   };
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-bootstrap().catch((err) => {
-  console.error('❌ Bootstrap failed:', err);
+bootstrap().catch((err: Error) => {
+  logger.error('Bootstrap failed', { detail: err.message });
   process.exit(1);
 });

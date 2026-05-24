@@ -26,6 +26,42 @@ async function getFirstAvailableWallet(): Promise<CardanoApi> {
   throw new Error('No Cardano wallet detected. Please install Eternl or Lace.');
 }
 
+function mapWalletError(err: any): string {
+  if (!err) return 'An unknown error occurred.';
+  const code = err.code;
+  const msg = err.message || String(err);
+  const lowerMsg = msg.toLowerCase();
+
+  // CIP-30 error code mapping
+  if (
+    code === 2 || 
+    code === 4 || 
+    lowerMsg.includes('user decline') || 
+    lowerMsg.includes('declined') || 
+    lowerMsg.includes('canceled') || 
+    lowerMsg.includes('cancelled') || 
+    lowerMsg.includes('refused') || 
+    lowerMsg.includes('user rejected')
+  ) {
+    return 'Transaction signature declined by user.';
+  }
+  if (
+    lowerMsg.includes('insufficient') || 
+    lowerMsg.includes('funds') || 
+    lowerMsg.includes('balance') || 
+    lowerMsg.includes('overflow')
+  ) {
+    return 'Insufficient funds in your wallet to cover the transaction value and network fees.';
+  }
+  if (
+    lowerMsg.includes('no cardano wallet') || 
+    lowerMsg.includes('no wallet found')
+  ) {
+    return 'No compatible Cardano wallet detected. Please install Eternl, Lace, Nami, Flint, or Vespr.';
+  }
+  return msg;
+}
+
 type PayStep = 'review' | 'signing' | 'submitted' | 'error';
 
 export default function PaymentApprovalPage() {
@@ -110,13 +146,10 @@ export default function PaymentApprovalPage() {
 
       setStep('submitted');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Payment failed';
-      if (msg.toLowerCase().includes('user') && (msg.includes('decline') || msg.includes('cancel'))) {
-        setStep('review');
-      } else {
-        setErrorMsg(msg);
-        setStep('error');
-      }
+      console.error('Wallet transaction error:', err);
+      const mapped = mapWalletError(err);
+      setErrorMsg(mapped);
+      setStep('review');
     }
   };
 
@@ -129,6 +162,30 @@ export default function PaymentApprovalPage() {
   }
 
   const currentStatus = liveStatus || invoice?.status || 'pending';
+
+  // Handle expired status
+  if (currentStatus === 'expired') {
+    return (
+      <div className="min-h-screen bg-surface flex flex-col items-center justify-center px-6 animate-fade-in">
+        <div className="w-full max-w-sm text-center">
+          <div className="w-24 h-24 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-6">
+            <AlertCircle size={48} className="text-red-400" />
+          </div>
+          <h1 className="text-2xl font-bold mb-2">Invoice Expired</h1>
+          <p className="text-text-secondary mb-8">
+            This invoice has expired and is no longer payable. Please ask the merchant to generate a new invoice.
+          </p>
+          <button
+            onClick={() => navigate('/customer/chats')}
+            className="btn-primary w-full"
+          >
+            Back to Chats
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const isPending = currentStatus === 'pending';
   const showStepper = step === 'submitted' || !isPending;
 
@@ -282,6 +339,16 @@ export default function PaymentApprovalPage() {
 
       <h1 className="text-2xl font-bold mb-1">Confirm Payment</h1>
       <p className="text-text-secondary text-sm mb-8">Review details before approving with your wallet</p>
+
+      {errorMsg && (
+        <div className="mb-6 flex items-start gap-3 bg-red-950/20 border border-red-500/25 rounded-2xl p-4 text-red-200 animate-fade-in">
+          <AlertCircle size={18} className="text-red-400 shrink-0 mt-0.5" />
+          <div className="text-xs">
+            <p className="font-semibold mb-0.5 text-red-300">Payment Failed</p>
+            <p className="text-gray-400">{errorMsg}</p>
+          </div>
+        </div>
+      )}
 
       {invoice ? (
         <div className="space-y-4">

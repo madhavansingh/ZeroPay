@@ -1,11 +1,10 @@
 import { Worker } from 'bullmq';
 import { bullMqRedis } from '../config/redis';
+import { logger } from '../config/logger';
 import { expireStaleInvoices } from '../services/invoice.service';
 import { expiryQueue } from '../queues/queue.definitions';
 
 export async function startExpiryWorker(): Promise<Worker> {
-  // Schedule repeatable job every 60 seconds
-  // BullMQ v5: QueueScheduler is removed — jobs are self-scheduling
   await expiryQueue.add(
     'expire-check',
     {},
@@ -20,7 +19,9 @@ export async function startExpiryWorker(): Promise<Worker> {
     async () => {
       const expired = await expireStaleInvoices();
       if (expired > 0) {
-        console.log(`[expiry] Expired ${expired} stale invoices`);
+        logger.info('[expiry] Stale invoices expired', { count: expired });
+      } else {
+        logger.debug('[expiry] No stale invoices found');
       }
     },
     {
@@ -30,15 +31,13 @@ export async function startExpiryWorker(): Promise<Worker> {
   );
 
   worker.on('active', (job) => {
-    console.log(`[expiry] Job ${job.id} is now active`);
+    logger.debug('[expiry] Job active', { jobId: job.id ?? undefined });
   });
-
   worker.on('completed', (job) => {
-    console.log(`[expiry] Job ${job.id} has completed`);
+    logger.debug('[expiry] Job completed', { jobId: job.id ?? undefined });
   });
-
   worker.on('failed', (job, err) => {
-    console.error(`[expiry] Job ${job?.id} failed:`, err.message);
+    logger.error('[expiry] Job failed', { jobId: job?.id ?? undefined, detail: err.message });
   });
 
   return worker;

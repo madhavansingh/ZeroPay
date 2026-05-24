@@ -2,12 +2,21 @@ import { Worker, Job } from 'bullmq';
 import axios from 'axios';
 import { bullMqRedis } from '../config/redis';
 import { env } from '../config/env';
+import { logger } from '../config/logger';
 import { Invoice } from '../models/Invoice';
 import { Merchant } from '../models/Merchant';
 import { User } from '../models/User';
 import { transitionInvoiceStatus, injectChatMessage } from '../services/invoice.service';
 import type { ReceiptJobData } from '../queues/queue.definitions';
 import type { IpfsReceipt } from '@zeropay/shared-types';
+
+// CID validation: supports CIDv0 (Qm..., 46 chars) and CIDv1 (bafy...)
+const CID_V0_REGEX = /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/;
+const CID_V1_REGEX = /^bafy[a-zA-Z0-9]{50,}$/;
+
+function isValidCid(cid: string): boolean {
+  return CID_V0_REGEX.test(cid) || CID_V1_REGEX.test(cid);
+}
 
 async function pinReceiptToIPFS(receipt: IpfsReceipt): Promise<string> {
   const response = await axios.post<{ IpfsHash: string }>(
@@ -39,6 +48,7 @@ export function startReceiptWorker(): Worker {
     'receipt-generation',
     async (job: Job<ReceiptJobData>) => {
       const { invoiceId, txHash } = job.data;
+      const ctx = { invoiceId, txHash, jobId: job.id ?? undefined };
 
       const invoice = await Invoice.findOne({ invoiceId })
         .populate('merchantId')
@@ -46,7 +56,13 @@ export function startReceiptWorker(): Worker {
 
       if (!invoice) throw new Error(`Invoice ${invoiceId} not found`);
       if (invoice.status !== 'confirmed') {
-        console.log(`[receipt] Invoice ${invoiceId} not confirmed — skipping`);
+        logger.info('[receipt] Invoice not confirmed — skipping', { ...ctx, status: invoice.status });
+        return;
+      }
+
+      // ── Idempotency guard: skip if receipt already pinned ──────────────────
+      if (invoice.receiptCid && isValidCid(invoice.receiptCid)) {
+        logger.info('[receipt] Receipt already pinned — skipping duplicate upload', { ...ctx, existingCid: invoice.receiptCid });
         return;
       }
 
@@ -57,7 +73,6 @@ export function startReceiptWorker(): Worker {
         ? await User.findById(invoice.customerId)
         : null;
 
-      // Build receipt document
       const receipt: IpfsReceipt = {
         version: '1.0',
         invoiceId: invoice.invoiceId,
@@ -79,16 +94,19 @@ export function startReceiptWorker(): Worker {
         networkConfirmations: invoice.networkConfirmations ?? 3,
       };
 
-      // Pin to IPFS
+      logger.info('[receipt] Pinning receipt to IPFS', ctx);
       const cid = await pinReceiptToIPFS(receipt);
 
-      // Transition to settled
+      // ── CID validation ────────────────────────────────────────────────────
+      if (!isValidCid(cid)) {
+        throw new Error(`Invalid CID returned from Pinata: "${cid}" — will retry`);
+      }
+
       await transitionInvoiceStatus(invoiceId, 'confirmed', 'settled', {
         receiptCid: cid,
         receiptPending: false,
       });
 
-      // Update merchant stats (atomic increment)
       await Merchant.findByIdAndUpdate(merchant._id, {
         $inc: {
           totalReceivedLovelace: invoice.amountLovelace,
@@ -96,7 +114,6 @@ export function startReceiptWorker(): Worker {
         },
       });
 
-      // Inject receipt message into chat room
       if (invoice.chatRoomId) {
         await injectChatMessage(invoice.chatRoomId, 'receipt', {
           invoiceId,
@@ -109,7 +126,7 @@ export function startReceiptWorker(): Worker {
         });
       }
 
-      console.log(`✅ [receipt] Invoice ${invoiceId} settled. IPFS: ${cid}`);
+      logger.info('[receipt] Invoice settled', { ...ctx, cid });
     },
     {
       connection: bullMqRedis,
@@ -118,17 +135,16 @@ export function startReceiptWorker(): Worker {
   );
 
   worker.on('active', (job) => {
-    console.log(`[receipt] Job ${job.id} is now active`);
+    logger.debug('[receipt] Job active', { jobId: job.id ?? undefined, invoiceId: job.data.invoiceId });
   });
 
   worker.on('completed', (job) => {
-    console.log(`[receipt] Job ${job.id} has completed`);
+    logger.info('[receipt] Job completed', { jobId: job.id ?? undefined, invoiceId: job.data.invoiceId });
   });
 
   worker.on('failed', async (job, err) => {
     if (job) {
-      console.error(`[receipt] Job ${job.id} failed:`, err.message);
-      // Mark receipt as pending so it can be retried manually
+      logger.error('[receipt] Job failed', { jobId: job.id ?? undefined, invoiceId: job.data.invoiceId, detail: err.message });
       await Invoice.findOneAndUpdate(
         { invoiceId: job.data.invoiceId },
         { $set: { receiptPending: true } }

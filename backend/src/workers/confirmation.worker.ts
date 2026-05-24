@@ -1,6 +1,7 @@
 import { Worker, Job } from 'bullmq';
 import { bullMqRedis } from '../config/redis';
 import { env } from '../config/env';
+import { logger } from '../config/logger';
 import { Invoice } from '../models/Invoice';
 import { Transaction } from '../models/Transaction';
 import { getTxInfo, verifyPayment } from '../services/blockchain.service';
@@ -17,15 +18,16 @@ export function startConfirmationWorker(): Worker {
     'tx-confirmation',
     async (job: Job<TxConfirmationJobData>) => {
       const { invoiceId, txHash, amountLovelace, paymentAddress } = job.data;
+      const ctx = { invoiceId, txHash, jobId: job.id ?? undefined, attempt: job.attemptsMade };
 
       // Verify invoice is still in a pollable state
       const invoice = await Invoice.findOne({ invoiceId });
       if (!invoice) {
-        console.log(`[confirmation] Invoice ${invoiceId} not found — skipping`);
+        logger.warn('[confirmation] Invoice not found — skipping', ctx);
         return;
       }
       if (!['submitted', 'confirming'].includes(invoice.status)) {
-        console.log(`[confirmation] Invoice ${invoiceId} status=${invoice.status} — no action`);
+        logger.info('[confirmation] Invoice in terminal state — no action', { ...ctx, status: invoice.status });
         return;
       }
 
@@ -34,7 +36,7 @@ export function startConfirmationWorker(): Worker {
       try {
         txInfo = await getTxInfo(txHash);
       } catch (err) {
-        console.warn(`[confirmation] Chain query failed for ${txHash}:`, err);
+        logger.warn('[confirmation] Chain query failed — will retry', { ...ctx, detail: err instanceof Error ? err.message : String(err) });
         throw err; // BullMQ will retry
       }
 
@@ -44,18 +46,20 @@ export function startConfirmationWorker(): Worker {
           { txHash },
           { $inc: { pollingAttempts: 1 }, $set: { lastPolledAt: new Date() } }
         );
+        logger.debug('[confirmation] TX not found on chain — retrying', ctx);
         throw new Error(`TX ${txHash} not found on chain — retrying`);
       }
 
       // Determine required confirmations (high-value check)
       const adaValue = amountLovelace / 1_000_000;
-      // Rough USD estimate using a fixed rate (no external call needed here)
       const requiredConfirmations =
         adaValue * 0.4 > HIGH_VALUE_THRESHOLD_USD
           ? HIGH_VALUE_CONFIRMATIONS
           : MIN_CONFIRMATIONS;
 
       const { confirmations } = txInfo;
+
+      logger.debug('[confirmation] Polling cycle', { ...ctx, confirmations, requiredConfirmations });
 
       // Update transaction record
       await Transaction.findOneAndUpdate(
@@ -78,25 +82,24 @@ export function startConfirmationWorker(): Worker {
         await transitionInvoiceStatus(invoiceId, 'submitted', 'confirming', {
           networkConfirmations: confirmations,
         });
-        // Slow down polling to 60s
-        await job.updateProgress(1); // signal that we've seen the tx
+        await job.updateProgress(1);
+        logger.info('[confirmation] TX detected on chain — transitioning to confirming', ctx);
       }
 
       // Not yet enough confirmations — retry
       if (confirmations < requiredConfirmations) {
-        await job.updateData({
-          ...job.data,
-        });
-        // Change delay to 60s for subsequent polls
-        throw new Error(
-          `${confirmations}/${requiredConfirmations} confirmations — polling again`
-        );
+        throw new Error(`${confirmations}/${requiredConfirmations} confirmations — polling again`);
       }
 
-      // ── Confirmed! ────────────────────────────────────────────────────────────
+      // Check for retry exhaustion
+      if (job.attemptsMade >= 59) {
+        logger.error('[confirmation] Retry exhaustion — giving up', { ...ctx, confirmations, requiredConfirmations });
+        return;
+      }
+
+      // ── Confirmed! ────────────────────────────────────────────────────────
       const verificationResult = verifyPayment(txInfo, paymentAddress, amountLovelace);
 
-      // Update transaction
       await Transaction.findOneAndUpdate(
         { txHash },
         {
@@ -110,7 +113,6 @@ export function startConfirmationWorker(): Worker {
         }
       );
 
-      // Transition invoice to confirmed
       const confirmedInvoice = await transitionInvoiceStatus(
         invoiceId,
         invoice.status as 'submitted' | 'confirming',
@@ -123,14 +125,12 @@ export function startConfirmationWorker(): Worker {
       );
 
       if (!confirmedInvoice) {
-        console.warn(`[confirmation] Invoice ${invoiceId} concurrent update — skipping`);
+        logger.warn('[confirmation] Race condition detected — concurrent update won, skipping', ctx);
         return;
       }
 
-      // Fetch merchant for notification
       const merchant = await Merchant.findById(confirmedInvoice.merchantId);
 
-      // Enqueue receipt + notifications
       await Promise.all([
         enqueueReceipt({ invoiceId, txHash }),
         enqueueNotification({
@@ -143,25 +143,27 @@ export function startConfirmationWorker(): Worker {
         }),
       ]);
 
-      console.log(`✅ [confirmation] Invoice ${invoiceId} confirmed after ${confirmations} blocks`);
+      logger.info('[confirmation] Invoice confirmed', { ...ctx, confirmations, shopName: merchant?.shopName });
     },
     {
       connection: bullMqRedis,
       concurrency: 10,
+      stalledInterval: 30_000,
+      maxStalledCount: 3,
     }
   );
 
   worker.on('active', (job) => {
-    console.log(`[confirmation] Job ${job.id} is now active`);
+    logger.debug('[confirmation] Job active', { jobId: job.id ?? undefined, invoiceId: job.data.invoiceId });
   });
 
   worker.on('completed', (job) => {
-    console.log(`[confirmation] Job ${job.id} has completed`);
+    logger.info('[confirmation] Job completed', { jobId: job.id ?? undefined, invoiceId: job.data.invoiceId });
   });
 
   worker.on('failed', (job, err) => {
     if (job && !err.message.includes('not found on chain') && !err.message.includes('confirmations')) {
-      console.error(`[confirmation] Job ${job.id} failed permanently:`, err.message);
+      logger.error('[confirmation] Job failed permanently', { jobId: job.id ?? undefined, invoiceId: job.data.invoiceId, detail: err.message });
     }
   });
 

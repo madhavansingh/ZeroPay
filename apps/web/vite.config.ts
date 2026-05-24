@@ -28,4 +28,45 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['@meshsdk/core', '@meshsdk/react'],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          // Cardano / Mesh SDK — largest, split first
+          if (
+            id.includes('@meshsdk') ||
+            id.includes('@emurgo') ||
+            id.includes('@lucid-evolution') ||
+            id.includes('cardano')
+          ) {
+            return 'vendor-cardano';
+          }
+          // Firebase
+          if (id.includes('firebase') || id.includes('@firebase')) {
+            return 'vendor-firebase';
+          }
+          // QR scanner
+          if (id.includes('qr-scanner') || id.includes('jsQR')) {
+            return 'vendor-qr';
+          }
+          // React core
+          if (
+            id.includes('node_modules/react/') ||
+            id.includes('node_modules/react-dom/') ||
+            id.includes('node_modules/react-router-dom/')
+          ) {
+            return 'vendor-react';
+          }
+          // TanStack Query + UI utilities
+          if (
+            id.includes('@tanstack') ||
+            id.includes('lucide-react') ||
+            id.includes('zustand')
+          ) {
+            return 'vendor-ui';
+          }
+        },
+      },
+    },
+  },
 });
