@@ -56,6 +56,7 @@ export interface User {
   displayName: string;
   role: UserRole;
   walletAddress?: string;
+  walletProvider?: string;
   stakeAddress?: string;
   fcmToken?: string;
   onboardingStep: OnboardingStep;

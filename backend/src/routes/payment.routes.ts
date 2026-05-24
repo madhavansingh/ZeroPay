@@ -14,6 +14,7 @@ const router = Router();
 
 const buildTxSchema = z.object({
   invoiceId: z.string().min(1),
+  customerAddress: z.string().regex(/^addr(_test)?1[a-z0-9]+$/, 'Invalid customer address format'),
 });
 
 const submitTxSchema = z.object({
@@ -28,8 +29,8 @@ router.post(
   validate(buildTxSchema),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const { invoiceId } = req.body as z.infer<typeof buildTxSchema>;
-      const result = await buildPaymentTx(invoiceId);
+      const { invoiceId, customerAddress } = req.body as z.infer<typeof buildTxSchema>;
+      const result = await buildPaymentTx(invoiceId, customerAddress);
       res.json({ success: true, data: result });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'TX build failed';

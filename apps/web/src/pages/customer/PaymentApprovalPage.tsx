@@ -2,6 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Shield, CheckCircle, AlertCircle, Loader, ExternalLink } from 'lucide-react';
+import { bech32 } from 'bech32';
 import { getInvoice, buildTx, submitTx, createChatRoom } from '../../services/api';
 import StatusBadge from '../../components/atoms/StatusBadge';
 import { database } from '../../services/firebase';
@@ -14,6 +15,29 @@ interface CardanoApi {
   getChangeAddress(): Promise<string>;
   signTx(tx: string, partialSign?: boolean): Promise<string>;
   submitTx(tx: string): Promise<string>;
+}
+
+function bech32FromHex(hex: string): string {
+  if (hex.startsWith('addr') || hex.startsWith('stake')) return hex;
+  try {
+    const cleanHex = hex.trim();
+    const bytes = Uint8Array.from(
+      cleanHex.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
+    );
+    const networkId = bytes[0] & 0x0f; // 0 = testnet (preprod), 1 = mainnet
+    const type = bytes[0] >> 4; // 14 or 15 = stake
+    
+    const isStake = type === 14 || type === 15;
+    const prefix = isStake
+      ? (networkId === 1 ? 'stake' : 'stake_test')
+      : (networkId === 1 ? 'addr' : 'addr_test');
+      
+    const words = bech32.toWords(bytes);
+    return bech32.encode(prefix, words, 1023);
+  } catch (err) {
+    console.error('Error converting address from hex to bech32:', err);
+    throw new Error('Failed to parse Cardano address');
+  }
 }
 
 async function getFirstAvailableWallet(): Promise<CardanoApi> {
@@ -127,12 +151,16 @@ export default function PaymentApprovalPage() {
     setErrorMsg('');
 
     try {
-      // 1. Build unsigned CBOR from backend
-      const buildRes = await buildTx(invoice.invoiceId);
-      if (!buildRes.success || !buildRes.data) throw new Error('Failed to build transaction');
-
-      // 2. Get CIP-30 wallet
+      // 1. Get CIP-30 wallet
       const api = await getFirstAvailableWallet();
+      const usedAddresses = await api.getUsedAddresses();
+      const hexAddress = usedAddresses[0] ?? (await api.getChangeAddress());
+      if (!hexAddress) throw new Error('Could not retrieve wallet address');
+      const address = bech32FromHex(hexAddress);
+
+      // 2. Build unsigned CBOR from backend passing customer change address
+      const buildRes = await buildTx(invoice.invoiceId, address);
+      if (!buildRes.success || !buildRes.data) throw new Error('Failed to build transaction');
 
       // 3. Sign client-side — keys never leave browser
       const signedTx = await api.signTx(buildRes.data.unsignedCbor, true);

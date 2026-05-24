@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Wallet, ExternalLink, CheckCircle } from 'lucide-react';
+import { Wallet, ExternalLink, CheckCircle, RefreshCw } from 'lucide-react';
+import { bech32 } from 'bech32';
 import { connectWallet } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
 
@@ -29,11 +30,26 @@ declare global {
 }
 
 function bech32FromHex(hex: string): string {
-  // CIP-30 wallets return hex-encoded addresses; some return bech32 directly
-  // If it starts with 'addr', it's bech32 already
-  if (hex.startsWith('addr')) return hex;
-  // Otherwise return as-is (frontend just stores it, backend validates)
-  return hex;
+  if (hex.startsWith('addr') || hex.startsWith('stake')) return hex;
+  try {
+    const cleanHex = hex.trim();
+    const bytes = Uint8Array.from(
+      cleanHex.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
+    );
+    const networkId = bytes[0] & 0x0f; // 0 = testnet (preprod), 1 = mainnet
+    const type = bytes[0] >> 4; // 14 or 15 = stake
+    
+    const isStake = type === 14 || type === 15;
+    const prefix = isStake
+      ? (networkId === 1 ? 'stake' : 'stake_test')
+      : (networkId === 1 ? 'addr' : 'addr_test');
+      
+    const words = bech32.toWords(bytes);
+    return bech32.encode(prefix, words, 1023);
+  } catch (err) {
+    console.error('Error converting address from hex to bech32:', err);
+    throw new Error('Failed to parse Cardano address');
+  }
 }
 
 export default function WalletConnectPage() {
@@ -42,59 +58,92 @@ export default function WalletConnectPage() {
   const [walletAddress, setWalletAddress] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const { updateOnboardingStep, updateWallet } = useAuthStore();
+  const { user, isAuthenticated, updateOnboardingStep, updateWallet, walletProvider } = useAuthStore();
 
-  const handleConnectWallet = async (walletKey: string) => {
-    setConnecting(walletKey);
+  useEffect(() => {
+    if (user?.onboardingStep === 'complete') {
+      console.log('[WalletConnect] User onboarding already complete. Redirecting to home...');
+      navigate('/', { replace: true });
+    }
+  }, [user?.onboardingStep, navigate]);
+
+  useEffect(() => {
+    // Auto-reconnect if previously approved AND user is authenticated
+    if (isAuthenticated && walletProvider && window.cardano?.[walletProvider]) {
+      console.log(`Auto-reconnecting to ${walletProvider} wallet for authenticated user...`);
+      handleConnectWallet(walletProvider, true);
+    }
+  }, [walletProvider, isAuthenticated]);
+
+  const handleConnectWallet = async (walletKey: string, silent = false) => {
+    if (!silent) setConnecting(walletKey);
     setError('');
     try {
       const cardanoWallet = window.cardano?.[walletKey];
       if (!cardanoWallet) {
-        throw new Error(`${walletKey} is not installed. Please install it as a browser extension.`);
+        if (!silent) {
+          throw new Error(`${walletKey} is not installed. Please install it as a browser extension.`);
+        }
+        return;
       }
 
       const api = await cardanoWallet.enable();
       const usedAddresses = await api.getUsedAddresses();
       const hexAddress = usedAddresses[0] ?? (await api.getChangeAddress());
 
-      if (!hexAddress) throw new Error('Could not retrieve wallet address');
+      if (!hexAddress) {
+        if (!silent) throw new Error('Could not retrieve wallet address');
+        return;
+      }
 
       const address = bech32FromHex(hexAddress);
+
+      if (address.startsWith('stake')) {
+        throw new Error('Stake addresses are not supported. Please connect a wallet with a payment address.');
+      }
+
+      if (!address.startsWith('addr')) {
+        throw new Error('Invalid payment address format.');
+      }
 
       // Save to backend
       await connectWallet({ walletAddress: address });
 
-      updateWallet(address);
+      updateWallet(address, walletKey);
       updateOnboardingStep('wallet-complete');
       setWalletAddress(address);
       setConnected(true);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Wallet connection failed';
-      setError(msg);
+      console.error('Wallet connect error:', err);
+      if (!silent) {
+        const msg = err instanceof Error ? err.message : 'Wallet connection failed';
+        setError(msg);
+      }
     } finally {
-      setConnecting(null);
+      if (!silent) setConnecting(null);
     }
   };
 
   const handleContinue = () => {
-    updateOnboardingStep('complete');
-    navigate('/merchant/dashboard');
+    navigate('/onboarding/shop');
   };
 
   if (connected) {
     return (
       <div className="min-h-screen bg-surface flex flex-col items-center justify-center px-6">
         <div className="w-full max-w-sm text-center animate-fade-in">
-          <div className="w-20 h-20 rounded-full bg-status-confirmed/10 flex items-center justify-center mx-auto mb-6">
-            <CheckCircle size={40} className="text-status-confirmed" />
+          <div className="w-20 h-20 rounded-full bg-teal-500/10 flex items-center justify-center mx-auto mb-6 shadow-[0_0_20px_rgba(20,169,154,0.2)]">
+            <CheckCircle size={40} className="text-teal-400" />
           </div>
           <h1 className="text-2xl font-bold mb-2">Wallet Connected!</h1>
-          <p className="text-text-secondary mb-2 text-sm">Your payment address:</p>
-          <div className="bg-surface-card border border-surface-border rounded-2xl p-3 mb-8">
-            <p className="font-mono text-xs text-text-secondary break-all">{walletAddress}</p>
+          <p className="text-text-secondary mb-2 text-sm">
+            Connected via <span className="text-teal-400 capitalize font-medium">{walletProvider}</span>
+          </p>
+          <div className="bg-surface-card border border-surface-border rounded-3xl p-4 mb-8">
+            <p className="font-mono text-[11px] text-text-secondary break-all leading-relaxed">{walletAddress}</p>
           </div>
           <button id="wallet-continue-btn" onClick={handleContinue} className="btn-primary w-full">
-            Go to Dashboard
+            Continue to Shop Setup
           </button>
         </div>
       </div>
@@ -109,11 +158,11 @@ export default function WalletConnectPage() {
       <div className="w-full max-w-sm animate-slide-up">
         {/* Step indicator */}
         <div className="flex gap-2 mb-8">
-          <div className="h-1 flex-1 rounded-full bg-teal-600" />
-          <div className="h-1 flex-1 rounded-full bg-teal-600" />
+          <div className="h-1 flex-1 rounded-full bg-teal-600 animate-pulse" />
+          <div className="h-1 flex-1 rounded-full bg-surface-border" />
         </div>
 
-        <div className="w-12 h-12 rounded-2xl bg-teal-600/10 flex items-center justify-center mb-6">
+        <div className="w-12 h-12 rounded-2xl bg-teal-600/10 flex items-center justify-center mb-6 shadow-[0_0_15px_rgba(20,169,154,0.1)]">
           <Wallet size={24} className="text-teal-400" />
         </div>
 
@@ -123,27 +172,29 @@ export default function WalletConnectPage() {
         </p>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-3 mb-4 text-red-400 text-sm">{error}</div>
+          <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-3 mb-4 text-red-400 text-sm animate-fade-in">
+            {error}
+          </div>
         )}
 
         {/* Installed wallets first */}
         {installedWallets.length > 0 && (
           <>
-            <p className="text-text-muted text-xs uppercase tracking-wider mb-2">Detected wallets</p>
-            <div className="space-y-3 mb-4">
+            <p className="text-text-muted text-xs uppercase tracking-wider mb-3 font-semibold">Detected wallets</p>
+            <div className="space-y-3 mb-6">
               {installedWallets.map((wallet) => (
                 <button
                   key={wallet.key}
                   id={`connect-${wallet.key}-btn`}
                   onClick={() => handleConnectWallet(wallet.key)}
                   disabled={!!connecting}
-                  className="w-full flex items-center justify-between px-4 py-4 rounded-2xl border border-teal-600/40 bg-teal-600/5 hover:bg-teal-600/10 transition-all disabled:opacity-50"
+                  className="w-full flex items-center justify-between px-5 py-4 rounded-3xl border border-surface-border bg-surface-card hover:border-teal-500/50 hover:bg-teal-950/10 transition-all active:scale-[0.98] disabled:opacity-50"
                 >
-                  <span className="font-medium text-text-primary">{wallet.name}</span>
+                  <span className="font-semibold text-text-primary">{wallet.name}</span>
                   {connecting === wallet.key ? (
-                    <span className="w-5 h-5 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+                    <RefreshCw size={16} className="animate-spin text-teal-400" />
                   ) : (
-                    <span className="text-teal-400 text-sm">Connect →</span>
+                    <span className="text-teal-400 text-sm font-medium">Connect →</span>
                   )}
                 </button>
               ))}
@@ -154,15 +205,15 @@ export default function WalletConnectPage() {
         {/* Other wallets */}
         {notInstalledWallets.length > 0 && (
           <>
-            <p className="text-text-muted text-xs uppercase tracking-wider mb-2">Other wallets</p>
-            <div className="space-y-2">
+            <p className="text-text-muted text-xs uppercase tracking-wider mb-3 font-semibold">Other wallets</p>
+            <div className="grid grid-cols-2 gap-2">
               {notInstalledWallets.map((wallet) => (
                 <div
                   key={wallet.key}
-                  className="w-full flex items-center justify-between px-4 py-3 rounded-2xl border border-surface-border bg-surface-card opacity-50"
+                  className="flex items-center justify-between px-4 py-3 rounded-2xl border border-surface-border bg-surface-card/40 opacity-40"
                 >
-                  <span className="text-sm text-text-secondary">{wallet.name}</span>
-                  <span className="text-text-muted text-xs">Not installed</span>
+                  <span className="text-xs text-text-secondary">{wallet.name}</span>
+                  <span className="text-[10px] text-text-muted">Missing</span>
                 </div>
               ))}
             </div>
@@ -170,8 +221,8 @@ export default function WalletConnectPage() {
         )}
 
         {installedWallets.length === 0 && (
-          <div className="text-center py-6">
-            <p className="text-text-secondary mb-4">No Cardano wallets detected.</p>
+          <div className="text-center py-8">
+            <p className="text-text-secondary mb-4 text-sm">No Cardano browser extension wallets detected.</p>
             <a
               href="https://eternl.io"
               target="_blank"
@@ -184,7 +235,7 @@ export default function WalletConnectPage() {
           </div>
         )}
 
-        <p className="text-text-muted text-xs text-center mt-6">
+        <p className="text-text-muted text-xs text-center mt-8">
           Your private keys are never shared with ZeroPay.
         </p>
       </div>

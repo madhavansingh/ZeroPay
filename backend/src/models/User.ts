@@ -7,6 +7,7 @@ export interface IUser extends Document {
   displayName: string;
   role: UserRole;
   walletAddress?: string;
+  walletProvider?: string;
   stakeAddress?: string;
   fcmToken?: string;
   notificationPreferences: {
@@ -52,6 +53,10 @@ const userSchema = new Schema<IUser>(
       sparse: true,
       unique: true,
       match: /^addr(_test)?1[a-z0-9]+$/,
+    },
+    walletProvider: {
+      type: String,
+      trim: true,
     },
     stakeAddress: {
       type: String,

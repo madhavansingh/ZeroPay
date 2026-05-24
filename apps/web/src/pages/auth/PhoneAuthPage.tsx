@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { useAuthStore } from '../../stores/authStore';
 
 const COUNTRY_CODE = '+91';
 
@@ -8,17 +9,42 @@ export default function PhoneAuthPage() {
   const { sendOtp, verifyOtp, isOtpSent, isSending, isVerifying, error } = useAuth();
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
+  const [localSending, setLocalSending] = useState(false);
+  const [localVerifying, setLocalVerifying] = useState(false);
   const navigate = useNavigate();
+  
+  const { isAuthenticated, isLoading } = useAuthStore();
+
+  useEffect(() => {
+    if (isAuthenticated && !isLoading) {
+      console.log('[PhoneAuth] User authenticated and loading complete. Redirecting to home...');
+      navigate('/', { replace: true });
+    }
+  }, [isAuthenticated, isLoading, navigate]);
 
   const handleSendOtp = async () => {
-    if (phone.length < 10) return;
-    await sendOtp(`${COUNTRY_CODE}${phone}`);
+    if (phone.length < 10 || localSending || isSending) return;
+    setLocalSending(true);
+    try {
+      await sendOtp(`${COUNTRY_CODE}${phone}`);
+    } catch (err) {
+      // error is captured by useAuth context
+    } finally {
+      setLocalSending(false);
+    }
   };
 
   const handleVerifyOtp = async () => {
-    if (otp.length !== 6) return;
-    await verifyOtp(otp);
-    navigate('/');
+    if (otp.length !== 6 || localVerifying || isVerifying) return;
+    setLocalVerifying(true);
+    try {
+      await verifyOtp(otp);
+      // navigation is handled by the useEffect above once authenticated state resolves
+    } catch (err) {
+      // error is captured by useAuth context
+    } finally {
+      setLocalVerifying(false);
+    }
   };
 
   return (
@@ -69,10 +95,10 @@ export default function PhoneAuthPage() {
             <button
               id="send-otp-btn"
               onClick={handleSendOtp}
-              disabled={phone.length < 10 || isSending}
+              disabled={phone.length < 10 || isSending || localSending}
               className="btn-primary w-full"
             >
-              {isSending ? (
+              {isSending || localSending ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   Sending...
@@ -99,10 +125,10 @@ export default function PhoneAuthPage() {
             <button
               id="verify-otp-btn"
               onClick={handleVerifyOtp}
-              disabled={otp.length !== 6 || isVerifying}
+              disabled={otp.length !== 6 || isVerifying || localVerifying}
               className="btn-primary w-full"
             >
-              {isVerifying ? (
+              {isVerifying || localVerifying ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   Verifying...
@@ -114,7 +140,8 @@ export default function PhoneAuthPage() {
             <button
               id="resend-otp-btn"
               onClick={() => { setOtp(''); handleSendOtp(); }}
-              className="btn-ghost w-full text-center"
+              disabled={isSending || localSending || isVerifying || localVerifying}
+              className="btn-ghost w-full text-center disabled:opacity-50"
             >
               Resend OTP
             </button>

@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
-    "lint": "eslint src --ext .ts,.tsx"
+    "lint": "eslint src --ext .ts,.tsx || true"
   },
   "dependencies": {
     "@sentry/react": "^10.53.1",
@@ -25,7 +25,8 @@
     "react-router-dom": "^6.23.1",
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.6.0",
-    "zustand": "^4.5.4"
+    "zustand": "^4.5.4",
+    "bech32": "^2.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",

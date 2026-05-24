@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, LogOut, ChevronRight, Wallet, Store } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
@@ -7,11 +8,28 @@ export default function ProfilePage() {
   const { user, activeRoleView, setActiveRoleView } = useAuthStore();
   const { logout } = useAuth();
   const navigate = useNavigate();
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const handleLogout = async () => {
-    await logout();
-    navigate('/auth');
+    setLoggingOut(true);
+    try {
+      await logout();
+      navigate('/auth', { replace: true });
+    } catch (err) {
+      console.error('Logout error:', err);
+    } finally {
+      setLoggingOut(false);
+    }
   };
+
+  if (loggingOut) {
+    return (
+      <div className="min-h-screen bg-surface flex flex-col items-center justify-center gap-4">
+        <div className="w-8 h-8 border-2 border-teal-600 border-t-transparent rounded-full animate-spin" />
+        <p className="text-text-secondary text-sm">Signing out safely...</p>
+      </div>
+    );
+  }
 
   const isMerchant = user?.role === 'merchant' || (user?.role === 'both' && activeRoleView === 'merchant');
 
@@ -68,39 +86,41 @@ export default function ProfilePage() {
           </div>
         )}
         {/* Wallet */}
-        <div className="card space-y-1">
-          <p className="text-text-muted text-xs uppercase tracking-wider mb-3">Wallet</p>
-          {user?.walletAddress ? (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Wallet size={18} className="text-teal-400" />
-                <div>
-                  <p className="text-sm font-medium">Connected</p>
-                  <p className="font-mono text-xs text-text-muted">
-                    {user.walletAddress.slice(0, 16)}...{user.walletAddress.slice(-6)}
-                  </p>
+        {isMerchant && (
+          <div className="card space-y-1">
+            <p className="text-text-muted text-xs uppercase tracking-wider mb-3">Wallet</p>
+            {user?.walletAddress ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Wallet size={18} className="text-teal-400" />
+                  <div>
+                    <p className="text-sm font-medium">Connected</p>
+                    <p className="font-mono text-xs text-text-muted">
+                      {user.walletAddress.slice(0, 16)}...{user.walletAddress.slice(-6)}
+                    </p>
+                  </div>
                 </div>
+                <button
+                  id="change-wallet-btn"
+                  onClick={() => navigate('/onboarding/wallet')}
+                  className="text-teal-400 text-xs hover:text-teal-300"
+                >
+                  Change
+                </button>
               </div>
+            ) : (
               <button
-                id="change-wallet-btn"
+                id="connect-wallet-profile-btn"
                 onClick={() => navigate('/onboarding/wallet')}
-                className="text-teal-400 text-xs hover:text-teal-300"
+                className="flex items-center gap-3 w-full"
               >
-                Change
+                <Wallet size={18} className="text-text-muted" />
+                <span className="text-sm text-text-secondary">Connect Wallet</span>
+                <ChevronRight size={16} className="ml-auto text-text-muted" />
               </button>
-            </div>
-          ) : (
-            <button
-              id="connect-wallet-profile-btn"
-              onClick={() => navigate('/onboarding/wallet')}
-              className="flex items-center gap-3 w-full"
-            >
-              <Wallet size={18} className="text-text-muted" />
-              <span className="text-sm text-text-secondary">Connect Wallet</span>
-              <ChevronRight size={16} className="ml-auto text-text-muted" />
-            </button>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* Merchant settings */}
         {isMerchant && (

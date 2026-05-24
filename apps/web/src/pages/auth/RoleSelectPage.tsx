@@ -1,28 +1,53 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, MessageSquare } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
-import { updateProfile } from '../../services/api';
+import { updateRoleAndStep } from '../../services/api';
 import { User } from '@zeropay/shared-types';
 
 export default function RoleSelectPage() {
   const [selected, setSelected] = useState<'customer' | 'merchant' | null>(null);
   const [loading, setLoading] = useState(false);
-  const { user, setUser, updateOnboardingStep } = useAuthStore();
+  const [error, setError] = useState<string | null>(null);
+  const { user, setUser, updateOnboardingStep, updateRole } = useAuthStore();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user?.onboardingStep === 'complete') {
+      console.log('[RoleSelect] User onboarding already complete. Redirecting to home...');
+      navigate('/', { replace: true });
+    }
+  }, [user?.onboardingStep, navigate]);
 
   const handleContinue = async () => {
     if (!selected) return;
     setLoading(true);
+    setError(null);
     try {
-      // Update role in backend (via profile update — role logic handled server-side)
-      // For now update locally and direct to correct onboarding
       if (selected === 'merchant') {
-        navigate('/onboarding/shop');
+        const response = await updateRoleAndStep({ role: 'merchant', onboardingStep: 'role-selected' });
+        if (response.success && response.data) {
+          setUser(response.data);
+        }
+        updateRole('merchant');
+        updateOnboardingStep('role-selected');
+        if (user?.walletAddress) {
+          navigate('/onboarding/shop');
+        } else {
+          navigate('/onboarding/wallet');
+        }
       } else {
+        const response = await updateRoleAndStep({ role: 'customer', onboardingStep: 'complete' });
+        if (response.success && response.data) {
+          setUser(response.data);
+        }
+        updateRole('customer');
         updateOnboardingStep('complete');
         navigate('/customer/chats');
       }
+    } catch (err: unknown) {
+      console.error('Failed to update role:', err);
+      setError(err instanceof Error ? err.message : 'Failed to save role. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -33,6 +58,12 @@ export default function RoleSelectPage() {
       <div className="w-full max-w-sm animate-slide-up">
         <h1 className="text-3xl font-bold mb-2">How will you use ZeroPay?</h1>
         <p className="text-text-secondary mb-8">You can change this later in settings.</p>
+
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-3 mb-4 text-red-400 text-sm animate-fade-in">
+            {error}
+          </div>
+        )}
 
         <div className="space-y-3 mb-8">
           {/* Merchant option */}

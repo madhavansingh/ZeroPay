@@ -39,9 +39,28 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function RequireMerchant({ children }: { children: React.ReactNode }) {
-  const { user } = useAuthStore();
+  const { user, isLoading } = useAuthStore();
+  if (isLoading) return <SplashPage />;
   if (!user || (user.role !== 'merchant' && user.role !== 'both')) {
     return <Navigate to="/customer/chats" replace />;
+  }
+  return <>{children}</>;
+}
+
+function RequireOnboardingComplete({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuthStore();
+  if (isLoading) return <SplashPage />;
+  if (user && user.onboardingStep !== 'complete') {
+    if (user.onboardingStep === 'new') return <Navigate to="/auth/role" replace />;
+    if (user.onboardingStep === 'role-selected') {
+      if (user.role === 'merchant' || user.role === 'both') {
+        return <Navigate to="/onboarding/wallet" replace />;
+      }
+      return <Navigate to="/customer/chats" replace />;
+    }
+    if (user.onboardingStep === 'wallet-complete') {
+      return <Navigate to="/onboarding/shop" replace />;
+    }
   }
   return <>{children}</>;
 }
@@ -53,8 +72,14 @@ export default function App() {
     if (!user) return '/auth';
     if (user.onboardingStep !== 'complete') {
       if (user.onboardingStep === 'new') return '/auth/role';
-      if (user.onboardingStep === 'role-selected') return '/onboarding/shop';
-      if (user.onboardingStep === 'shop-complete') return '/onboarding/wallet';
+      if (user.onboardingStep === 'role-selected') {
+        if (user.role === 'merchant' || user.role === 'both') {
+          return '/onboarding/wallet';
+        }
+        return '/customer/chats';
+      }
+      if (user.onboardingStep === 'wallet-complete') return '/onboarding/shop';
+      if (user.onboardingStep === 'shop-complete') return '/merchant/dashboard';
     }
     if (user.role === 'merchant' || user.role === 'both') return '/merchant/dashboard';
     return '/customer/chats';
@@ -74,23 +99,23 @@ export default function App() {
           <Route path="/auth/role" element={<RequireAuth><RoleSelectPage /></RequireAuth>} />
 
           {/* Onboarding */}
-          <Route path="/onboarding/shop" element={<RequireAuth><ShopSetupPage /></RequireAuth>} />
-          <Route path="/onboarding/wallet" element={<RequireAuth><WalletConnectPage /></RequireAuth>} />
+          <Route path="/onboarding/shop" element={<RequireAuth><RequireMerchant><ShopSetupPage /></RequireMerchant></RequireAuth>} />
+          <Route path="/onboarding/wallet" element={<RequireAuth><RequireMerchant><WalletConnectPage /></RequireMerchant></RequireAuth>} />
 
           {/* Merchant (heavy) */}
-          <Route path="/merchant/dashboard" element={<RequireAuth><RequireMerchant><DashboardPage /></RequireMerchant></RequireAuth>} />
-          <Route path="/merchant/checkout" element={<RequireAuth><RequireMerchant><CounterCheckoutPage /></RequireMerchant></RequireAuth>} />
-          <Route path="/merchant/qr/:merchantId" element={<RequireAuth><RequireMerchant><QRDisplayPage /></RequireMerchant></RequireAuth>} />
+          <Route path="/merchant/dashboard" element={<RequireAuth><RequireOnboardingComplete><RequireMerchant><DashboardPage /></RequireMerchant></RequireOnboardingComplete></RequireAuth>} />
+          <Route path="/merchant/checkout" element={<RequireAuth><RequireOnboardingComplete><RequireMerchant><CounterCheckoutPage /></RequireMerchant></RequireOnboardingComplete></RequireAuth>} />
+          <Route path="/merchant/qr/:merchantId" element={<RequireAuth><RequireOnboardingComplete><RequireMerchant><QRDisplayPage /></RequireMerchant></RequireOnboardingComplete></RequireAuth>} />
 
           {/* Customer */}
-          <Route path="/customer/chats" element={<RequireAuth><ChatListPage /></RequireAuth>} />
-          <Route path="/customer/chats/:roomId" element={<RequireAuth><ChatRoomPage /></RequireAuth>} />
-          <Route path="/customer/scan" element={<RequireAuth><ScanQRPage /></RequireAuth>} />
-          <Route path="/customer/pay/:merchantId" element={<RequireAuth><PaymentApprovalPage /></RequireAuth>} />
+          <Route path="/customer/chats" element={<RequireAuth><RequireOnboardingComplete><ChatListPage /></RequireOnboardingComplete></RequireAuth>} />
+          <Route path="/customer/chats/:roomId" element={<RequireAuth><RequireOnboardingComplete><ChatRoomPage /></RequireOnboardingComplete></RequireAuth>} />
+          <Route path="/customer/scan" element={<RequireAuth><RequireOnboardingComplete><ScanQRPage /></RequireOnboardingComplete></RequireAuth>} />
+          <Route path="/customer/pay/:merchantId" element={<RequireAuth><RequireOnboardingComplete><PaymentApprovalPage /></RequireOnboardingComplete></RequireAuth>} />
 
           {/* Shared */}
-          <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
-          <Route path="/receipt/:invoiceId" element={<RequireAuth><ReceiptPage /></RequireAuth>} />
+          <Route path="/profile" element={<RequireAuth><RequireOnboardingComplete><ProfilePage /></RequireOnboardingComplete></RequireAuth>} />
+          <Route path="/receipt/:invoiceId" element={<RequireAuth><RequireOnboardingComplete><ReceiptPage /></RequireOnboardingComplete></RequireAuth>} />
 
           {/* 404 */}
           <Route path="*" element={<Navigate to="/" replace />} />

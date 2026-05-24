@@ -2,9 +2,11 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getFirebaseAuth } from '../config/firebase-admin';
 import { User } from '../models/User';
+import { Merchant } from '../models/Merchant';
 import { requireAuth } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { authRateLimit } from '../middleware/rateLimit';
+import { upstashRedis, cacheKeys } from '../config/redis';
 
 const router = Router();
 
@@ -123,6 +125,89 @@ router.put(
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Update failed';
       res.status(400).json({ success: false, error: message });
+    }
+  }
+);
+
+// PUT /api/v1/auth/role
+router.put(
+  '/role',
+  requireAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { role, onboardingStep } = req.body;
+      const { user } = req;
+
+      if (role) {
+        if (!['customer', 'merchant', 'both'].includes(role)) {
+          res.status(400).json({ success: false, error: 'Invalid role' });
+          return;
+        }
+        user.role = role;
+      }
+
+      if (onboardingStep) {
+        if (!['new', 'role-selected', 'wallet-complete', 'shop-complete', 'complete'].includes(onboardingStep)) {
+          res.status(400).json({ success: false, error: 'Invalid onboarding step' });
+          return;
+        }
+        user.onboardingStep = onboardingStep;
+      }
+
+      await user.save();
+      res.json({
+        success: true,
+        data: {
+          id: user.id,
+          firebaseUid: user.firebaseUid,
+          displayName: user.displayName,
+          role: user.role,
+          onboardingStep: user.onboardingStep,
+          walletAddress: user.walletAddress,
+        },
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Update failed';
+      res.status(400).json({ success: false, error: message });
+    }
+  }
+);
+
+// POST /api/v1/auth/logout
+router.post(
+  '/logout',
+  requireAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { user } = req;
+
+      // 1. Delete associated merchant profile and invalidate its Redis cache
+      const merchant = await Merchant.findOne({ userId: user.id });
+      if (merchant) {
+        await upstashRedis.del(cacheKeys.merchantProfile(merchant.merchantId));
+        await Merchant.deleteOne({ _id: merchant._id });
+      }
+
+      // 2. Reset user auth and onboarding fields explicitly using updateOne to bypass any validation/regex index constraints on null/undefined
+      await User.updateOne(
+        { _id: user.id },
+        {
+          $set: {
+            role: 'customer',
+            onboardingStep: 'new',
+          },
+          $unset: {
+            walletAddress: 1,
+            walletProvider: 1,
+            stakeAddress: 1,
+          },
+        }
+      );
+
+      res.json({ success: true, message: 'Session reset successfully' });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Logout failed';
+      res.status(500).json({ success: false, error: message });
     }
   }
 );

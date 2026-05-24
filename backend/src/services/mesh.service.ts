@@ -30,7 +30,7 @@ export interface BuildTxResult {
  * - No wallet required to build — uses BlockfrostProvider as data fetcher only
  * - Returns raw CBOR that the CIP-30 wallet can sign with signTx()
  */
-export async function buildPaymentTx(invoiceId: string): Promise<BuildTxResult> {
+export async function buildPaymentTx(invoiceId: string, customerAddress: string): Promise<BuildTxResult> {
   const invoice = await Invoice.findOne({ invoiceId });
   if (!invoice) throw new Error('Invoice not found');
   if (invoice.status !== 'pending') {
@@ -55,10 +55,10 @@ export async function buildPaymentTx(invoiceId: string): Promise<BuildTxResult> 
   // Build the tx:
   // - Output: lovelace to merchant's payment address
   // - Metadata: CIP-674 key 674 with invoice info
-  // Note: changeAddress will be filled in by the CIP-30 wallet at sign time
-  // We use a placeholder that gets replaced when the wallet signs
+  // - Change: set to customer's payment address so Mesh can balance outputs using Blockfrost UTXOs
   const unsignedCbor = await txBuilder
     .txOut(invoice.paymentAddress, [{ unit: 'lovelace', quantity: invoice.amountLovelace.toString() }])
+    .changeAddress(customerAddress)
     .metadataValue(METADATA_KEY, metadataValue)
     .complete();
 

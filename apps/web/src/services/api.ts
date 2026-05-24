@@ -34,6 +34,12 @@ export const getMe = () =>
 export const updateProfile = (data: { displayName?: string; fcmToken?: string }) =>
   http.put<ApiResponse>('/auth/profile', data).then((r) => r.data);
 
+export const updateRoleAndStep = (data: { role?: string; onboardingStep?: string }) =>
+  http.put<ApiResponse<User>>('/auth/role', data).then((r) => r.data);
+
+export const logoutUser = () =>
+  http.post<ApiResponse>('/auth/logout').then((r) => r.data);
+
 // ─── Price ────────────────────────────────────────────────────────────────────
 
 export const getAdaInrRate = () =>
@@ -45,6 +51,8 @@ export const onboardMerchant = (data: {
   shopName: string;
   category: string;
   description?: string;
+  walletAddress: string;
+  walletProvider: string;
 }) => http.post<ApiResponse<Merchant>>('/merchant/onboard', data).then((r) => r.data);
 
 export const getMerchantPublic = (merchantId: string) =>
@@ -73,8 +81,8 @@ export const getMerchantInvoices = (params?: { page?: number; limit?: number; st
 
 // ─── Payments ────────────────────────────────────────────────────────────────
 
-export const buildTx = (invoiceId: string) =>
-  http.post<ApiResponse<BuildTxResponse>>('/payments/build-tx', { invoiceId }).then((r) => r.data);
+export const buildTx = (invoiceId: string, customerAddress: string) =>
+  http.post<ApiResponse<BuildTxResponse>>('/payments/build-tx', { invoiceId, customerAddress }).then((r) => r.data);
 
 export const submitTx = (data: { invoiceId: string; txHash: string }) =>
   http.post<ApiResponse>('/payments/submit', data).then((r) => r.data);

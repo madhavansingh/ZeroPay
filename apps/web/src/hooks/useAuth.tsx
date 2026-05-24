@@ -7,8 +7,9 @@ import {
   signOut,
 } from 'firebase/auth';
 import { getMessaging, getToken } from 'firebase/messaging';
+import { useQueryClient } from '@tanstack/react-query';
 import app, { auth } from '../services/firebase';
-import { syncUser } from '../services/api';
+import { syncUser, logoutUser } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 
 interface AuthContextValue {
@@ -32,6 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isOtpSent, setIsOtpSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const queryClient = useQueryClient();
   const { setUser, setFirebaseUid, setLoading, logout: storeLogout } = useAuthStore();
 
   const requestFcmToken = async (): Promise<string | undefined> => {
@@ -68,7 +70,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Listen to Firebase auth state
   useEffect(() => {
+    console.log('[Auth] Subscribing to onAuthStateChanged...');
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log(`[Auth] Auth state changed: firebaseUser=${firebaseUser ? firebaseUser.uid : 'null'}`);
+      setLoading(true);
       if (firebaseUser) {
         setFirebaseUid(firebaseUser.uid);
         try {
@@ -76,43 +81,78 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           try {
             fcmToken = await requestFcmToken();
           } catch (e) {
-            console.warn('Failed to obtain FCM token:', e);
+            console.warn('[Auth] Failed to obtain FCM token:', e);
           }
 
+          console.log('[Auth] Syncing user session with backend...');
           const response = await syncUser({
             displayName: firebaseUser.displayName ?? undefined,
             fcmToken,
           });
           if (response.success && response.data) {
+            console.log('[Auth] User sync success:', JSON.stringify(response.data));
             setUser(response.data);
+            console.log(`[Auth] Role restored: role=${response.data.role}, onboardingStep=${response.data.onboardingStep}`);
+          } else {
+            console.error('[Auth] User sync returned unsuccessful response. Clearing session.');
+            localStorage.removeItem('zeropay-auth');
+            storeLogout();
           }
-        } catch {
+        } catch (err) {
+          console.error('[Auth] User sync exception. Clearing session:', err);
+          localStorage.removeItem('zeropay-auth');
+          storeLogout();
+        } finally {
           setLoading(false);
         }
       } else {
+        console.log('[Auth] No Firebase user detected. Resetting auth store...');
         storeLogout();
         setLoading(false);
       }
     });
 
-    return unsubscribe;
+    return () => {
+      console.log('[Auth] Unsubscribing from onAuthStateChanged');
+      unsubscribe();
+    };
   }, []);
 
   const sendOtp = async (phone: string): Promise<void> => {
+    if (isSending) {
+      console.log('[Auth] Already sending OTP. Call ignored.');
+      return;
+    }
     setIsSending(true);
     setError(null);
+    console.log(`[Auth] Initiating OTP send to: ${phone}`);
 
+    let verifier: RecaptchaVerifier | null = null;
     try {
-      // Setup invisible recaptcha
-      const recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+      // Clear container child elements to avoid duplicate ReCAPTCHA frames
+      const container = document.getElementById('recaptcha-container');
+      if (container) {
+        container.innerHTML = '';
+      }
+
+      verifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
         size: 'invisible',
       });
 
-      const result = await signInWithPhoneNumber(auth, phone, recaptchaVerifier);
+      const result = await signInWithPhoneNumber(auth, phone, verifier);
       setConfirmation(result);
       setPhoneNumber(phone);
       setIsOtpSent(true);
+      console.log('[Auth] OTP sent successfully');
     } catch (err: unknown) {
+      console.error('[Auth] Failed to send OTP:', err);
+      if (verifier) {
+        try {
+          verifier.clear();
+        } catch (e) {
+          console.warn('[Auth] Failed to clear verifier:', e);
+        }
+      }
       const message = err instanceof Error ? err.message : 'Failed to send OTP';
       setError(message);
       throw err;
@@ -122,14 +162,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const verifyOtp = async (otp: string): Promise<void> => {
-    if (!confirmation) throw new Error('No OTP sent');
+    if (isVerifying) {
+      console.log('[Auth] Already verifying OTP. Call ignored.');
+      return;
+    }
+    if (!confirmation) {
+      console.warn('[Auth] verifyOtp called but confirmationResult is null');
+      throw new Error('No OTP sent');
+    }
     setIsVerifying(true);
     setError(null);
+    console.log('[Auth] Verifying OTP...');
 
     try {
       await confirmation.confirm(otp);
-      // onAuthStateChanged will handle the rest
+      console.log('[Auth] OTP verification request succeeded on Firebase');
+      // onAuthStateChanged will handle backend sync and routing next
     } catch (err: unknown) {
+      console.error('[Auth] OTP verification failed:', err);
       const message = err instanceof Error ? err.message : 'Invalid OTP';
       setError(message);
       throw err;
@@ -139,8 +189,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async (): Promise<void> => {
-    await signOut(auth);
+    console.log('[Auth] Initiating logout...');
+    try {
+      if (auth.currentUser) {
+        await logoutUser();
+        console.log('[Auth] Backend logout user reset complete');
+      }
+    } catch (e) {
+      console.warn('[Auth] Backend logout user reset failed (might be already unauthenticated):', e);
+    }
+
+    try {
+      await signOut(auth);
+      console.log('[Auth] Firebase signOut complete');
+    } catch (e) {
+      console.error('[Auth] Firebase signOut error:', e);
+    }
+
+    try {
+      queryClient.clear();
+      console.log('[Auth] React Query cache cleared');
+    } catch (e) {
+      console.error('[Auth] Failed to clear query cache:', e);
+    }
+
     storeLogout();
+    try {
+      useAuthStore.persist.clearStorage();
+      console.log('[Auth] Zustand persisted store cleared');
+    } catch (e) {
+      console.error('[Auth] Failed to clear Zustand persisted store:', e);
+    }
+    localStorage.removeItem('zeropay-auth');
+    console.log('[Auth] Logout success. Local session artifacts deleted.');
   };
 
   return (

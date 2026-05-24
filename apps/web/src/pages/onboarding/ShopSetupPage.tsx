@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { onboardMerchant } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
@@ -20,16 +20,37 @@ export default function ShopSetupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const { updateOnboardingStep } = useAuthStore();
+  const { user, walletProvider, updateOnboardingStep } = useAuthStore();
+  useEffect(() => {
+    if (user?.onboardingStep === 'complete') {
+      console.log('[ShopSetup] User onboarding already complete. Redirecting to home...');
+      navigate('/', { replace: true });
+      return;
+    }
+    if (user && !user.walletAddress) {
+      alert("Please connect a wallet before continuing");
+      navigate('/onboarding/wallet', { replace: true });
+    }
+  }, [user, navigate]);
 
   const handleSubmit = async () => {
     if (!shopName.trim() || !category) return;
+    if (!user?.walletAddress || !walletProvider) {
+      setError('Cardano wallet is not connected. Please connect a wallet first.');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
-      await onboardMerchant({ shopName: shopName.trim(), category, description: description.trim() || undefined });
-      updateOnboardingStep('shop-complete');
-      navigate('/onboarding/wallet');
+      await onboardMerchant({ 
+        shopName: shopName.trim(), 
+        category, 
+        description: description.trim() || undefined,
+        walletAddress: user.walletAddress,
+        walletProvider: walletProvider,
+      });
+      updateOnboardingStep('complete');
+      navigate('/merchant/dashboard');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Setup failed. Try again.');
     } finally {
@@ -43,7 +64,7 @@ export default function ShopSetupPage() {
         {/* Step indicator */}
         <div className="flex gap-2 mb-8">
           <div className="h-1 flex-1 rounded-full bg-teal-600" />
-          <div className="h-1 flex-1 rounded-full bg-surface-border" />
+          <div className="h-1 flex-1 rounded-full bg-teal-600 animate-pulse" />
         </div>
 
         <h1 className="text-3xl font-bold mb-2">Set up your shop</h1>

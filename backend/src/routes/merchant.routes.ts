@@ -6,6 +6,7 @@ import { Merchant } from '../models/Merchant';
 import { User } from '../models/User';
 import { Invoice } from '../models/Invoice';
 import { upstashRedis, cacheKeys, cacheTtl } from '../config/redis';
+import { logger } from '../config/logger';
 
 const router = Router();
 
@@ -14,10 +15,20 @@ async function generateMerchantId(): Promise<string> {
   return `MC-${String(counter + 1000).padStart(4, '0')}`;
 }
 
+const walletAddressSchema = z.string()
+  .refine((val) => !val.startsWith('stake'), {
+    message: 'Stake addresses are not supported',
+  })
+  .refine((val) => /^addr(_test)?1[a-z0-9]+$/.test(val), {
+    message: 'Invalid payment address format',
+  });
+
 const onboardSchema = z.object({
   shopName: z.string().min(2).max(50).trim(),
   category: z.enum(['food', 'retail', 'services', 'vendor', 'other']),
   description: z.string().max(200).trim().optional(),
+  walletAddress: walletAddressSchema,
+  walletProvider: z.string().min(1).trim(),
 });
 
 const settingsSchema = z.object({
@@ -28,7 +39,7 @@ const settingsSchema = z.object({
 });
 
 const walletSchema = z.object({
-  walletAddress: z.string().regex(/^addr(_test)?1[a-z0-9]+$/, 'Invalid Cardano bech32 address'),
+  walletAddress: walletAddressSchema,
   stakeAddress: z.string().optional(),
 });
 
@@ -38,23 +49,30 @@ router.post(
   requireAuth,
   validate(onboardSchema),
   async (req: Request, res: Response): Promise<void> => {
+    const requestId = res.locals['requestId'] as string | undefined;
     try {
       const existing = await Merchant.findOne({ userId: req.user.id });
       if (existing) {
-        res.status(409).json({ success: false, error: 'Merchant profile already exists' });
+        logger.warn('Merchant onboarding failed — profile already exists', {
+          requestId,
+          userId: req.user.id,
+        });
+        res.status(409).json({ success: false, error: 'Merchant profile already exists', requestId });
         return;
       }
 
-      if (!req.user.walletAddress) {
-        res.status(400).json({
-          success: false,
-          error: 'Connect a wallet before onboarding as merchant',
-        });
-        return;
-      }
+      const { shopName, category, description, walletAddress, walletProvider } = req.body as z.infer<typeof onboardSchema>;
+
+      logger.info('Onboard merchant request received', {
+        requestId,
+        userId: req.user.id,
+        shopName,
+        category,
+        walletProvider,
+        walletAddress,
+      });
 
       const merchantId = await generateMerchantId();
-      const { shopName, category, description } = req.body as z.infer<typeof onboardSchema>;
 
       const merchant = await Merchant.create({
         userId: req.user.id,
@@ -62,16 +80,27 @@ router.post(
         shopName,
         category,
         description,
-        paymentAddress: req.user.walletAddress,
+        paymentAddress: walletAddress,
         invoiceExpiry: 600,
       });
 
-      // Update user role
+      // Update user role, onboardingStep, and wallet details
       await User.findByIdAndUpdate(req.user.id, {
         $set: {
+          walletAddress,
+          walletProvider,
           role: req.user.role === 'customer' ? 'both' : 'merchant',
-          onboardingStep: 'shop-complete',
+          onboardingStep: 'complete',
         },
+      });
+
+      logger.info('Merchant onboarded successfully', {
+        requestId,
+        userId: req.user.id,
+        merchantId: merchant.merchantId,
+        shopName: merchant.shopName,
+        walletAddress,
+        walletProvider,
       });
 
       res.status(201).json({
@@ -82,10 +111,16 @@ router.post(
           category: merchant.category,
           paymentAddress: merchant.paymentAddress,
         },
+        requestId,
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Onboarding failed';
-      res.status(400).json({ success: false, error: message });
+      logger.error('Merchant onboarding failed with error', {
+        requestId,
+        userId: req.user.id,
+        detail: message,
+      });
+      res.status(400).json({ success: false, error: message, requestId });
     }
   }
 );
@@ -167,15 +202,27 @@ router.post(
   requireAuth,
   validate(walletSchema),
   async (req: Request, res: Response): Promise<void> => {
+    const requestId = res.locals['requestId'] as string | undefined;
     try {
       const { walletAddress, stakeAddress } = req.body as z.infer<typeof walletSchema>;
+
+      logger.info('Connect/update wallet request received', {
+        requestId,
+        userId: req.user.id,
+        walletAddress,
+        stakeAddress,
+      });
+
+      const nextStep =
+        req.user.onboardingStep === 'role-selected' || req.user.onboardingStep === 'new'
+          ? 'wallet-complete'
+          : req.user.onboardingStep;
 
       await User.findByIdAndUpdate(req.user.id, {
         $set: {
           walletAddress,
           stakeAddress,
-          onboardingStep:
-            req.user.onboardingStep === 'shop-complete' ? 'wallet-complete' : req.user.onboardingStep,
+          onboardingStep: nextStep,
         },
       });
 
@@ -190,10 +237,21 @@ router.post(
         await upstashRedis.del(cacheKeys.merchantProfile(merchant.merchantId));
       }
 
-      res.json({ success: true, data: { walletAddress } });
+      logger.info('Wallet connected/updated successfully', {
+        requestId,
+        userId: req.user.id,
+        walletAddress,
+      });
+
+      res.json({ success: true, data: { walletAddress }, requestId });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Wallet update failed';
-      res.status(400).json({ success: false, error: message });
+      logger.error('Wallet connect/update failed', {
+        requestId,
+        userId: req.user.id,
+        detail: message,
+      });
+      res.status(400).json({ success: false, error: message, requestId });
     }
   }
 );

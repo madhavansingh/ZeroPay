@@ -9,6 +9,7 @@ interface AuthState {
   isLoading: boolean;
   isAuthenticated: boolean;
   activeRoleView: 'merchant' | 'customer';
+  walletProvider: string | null;
   setUser: (user: User) => void;
   setIdToken: (token: string) => void;
   setFirebaseUid: (uid: string) => void;
@@ -16,7 +17,8 @@ interface AuthState {
   setActiveRoleView: (view: 'merchant' | 'customer') => void;
   updateOnboardingStep: (step: OnboardingStep) => void;
   updateRole: (role: UserRole) => void;
-  updateWallet: (address: string) => void;
+  updateWallet: (address: string, provider: string) => void;
+  setWalletProvider: (provider: string | null) => void;
   logout: () => void;
 }
 
@@ -29,12 +31,14 @@ export const useAuthStore = create<AuthState>()(
       isLoading: true,
       isAuthenticated: false,
       activeRoleView: 'merchant',
+      walletProvider: null,
 
       setUser: (user) =>
         set((state) => ({
           user,
           isAuthenticated: true,
           isLoading: false,
+          walletProvider: user.walletProvider || state.walletProvider,
           activeRoleView:
             state.activeRoleView === 'customer' && user.role === 'both'
               ? 'customer'
@@ -59,10 +63,13 @@ export const useAuthStore = create<AuthState>()(
           user: state.user ? { ...state.user, role } : null,
         })),
 
-      updateWallet: (walletAddress) =>
+      updateWallet: (walletAddress, walletProvider) =>
         set((state) => ({
-          user: state.user ? { ...state.user, walletAddress } : null,
+          user: state.user ? { ...state.user, walletAddress, walletProvider } : null,
+          walletProvider,
         })),
+
+      setWalletProvider: (walletProvider) => set({ walletProvider }),
 
       logout: () =>
         set({
@@ -71,6 +78,7 @@ export const useAuthStore = create<AuthState>()(
           idToken: null,
           isAuthenticated: false,
           activeRoleView: 'merchant',
+          walletProvider: null,
         }),
     }),
     {
@@ -79,6 +87,7 @@ export const useAuthStore = create<AuthState>()(
         user: state.user,
         firebaseUid: state.firebaseUid,
         activeRoleView: state.activeRoleView,
+        walletProvider: state.walletProvider,
       }),
     }
   )

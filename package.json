@@ -4,18 +4,24 @@
   "private": true,
   "workspaces": [
     "apps/web",
-    "apps/mobile",
     "backend",
     "packages/shared-types"
   ],
   "scripts": {
     "dev:backend": "npm run dev --workspace=backend",
     "dev:web": "npm run dev --workspace=apps/web",
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:web\"",
-    "build:web": "npm run build --workspace=apps/web",
+    "dev": "concurrently --names \"BACKEND,WEB\" --prefix-colors \"cyan,magenta\" \"npm run dev:backend\" \"npm run dev:web\"",
     "build:backend": "npm run build --workspace=backend",
-    "type-check": "npm run type-check --workspace=backend && npm run type-check --workspace=apps/web",
-    "lint": "npm run lint --workspace=backend && npm run lint --workspace=apps/web"
+    "build:web": "npm run build --workspace=apps/web",
+    "build": "npm run build:backend && npm run build:web",
+    "start": "npm run start --workspace=backend",
+    "type-check:backend": "npm run type-check --workspace=backend",
+    "type-check:web": "npm run type-check --workspace=apps/web",
+    "type-check": "npm run type-check:backend && npm run type-check:web",
+    "lint:backend": "npm run lint --workspace=backend --if-present",
+    "lint:web": "npm run lint --workspace=apps/web --if-present",
+    "lint": "npm run lint:backend && npm run lint:web",
+    "clean": "rm -rf backend/dist apps/web/dist"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
