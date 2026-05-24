@@ -1,4 +1,16 @@
 import { Request, Response, NextFunction, Router } from 'express';
+import { getSocketServer } from '../config/socketServer';
+import { circuitRegistry } from '../config/circuitBreaker';
+import {
+  txConfirmationQueue,
+  receiptQueue,
+  notificationQueue,
+  expiryQueue,
+  dailyStatsQueue,
+  disputeResolutionQueue,
+  webhookQueue,
+  digitalDeliveryQueue,
+} from '../queues/queue.definitions';
 
 // In-memory metrics counters
 const requestCounts: Record<string, number> = {};
@@ -34,7 +46,7 @@ function percentile(arr: number[], p: number): number {
 export function createMetricsRouter(): Router {
   const router = Router();
 
-  router.get('/', (_req: Request, res: Response) => {
+  router.get('/', async (_req: Request, res: Response) => {
     const lines: string[] = [
       '# HELP zeropay_requests_total Total number of HTTP requests',
       '# TYPE zeropay_requests_total counter',
@@ -61,6 +73,68 @@ export function createMetricsRouter(): Router {
     for (const [route, count] of Object.entries(requestCounts)) {
       const safeRoute = route.replace(/"/g, '');
       lines.push(`zeropay_route_requests_total{route="${safeRoute}"} ${count}`);
+    }
+
+    // ─── Socket.IO active connections metrics ──────────────────────────────
+    lines.push('');
+    lines.push('# HELP zeropay_socket_connections_total Total active Socket.IO connections');
+    lines.push('# TYPE zeropay_socket_connections_total gauge');
+    let activeSockets = 0;
+    try {
+      const io = getSocketServer();
+      activeSockets = io.sockets.sockets.size;
+    } catch {
+      // Socket server not active or initialized
+    }
+    lines.push(`zeropay_socket_connections_total ${activeSockets}`);
+
+    // ─── Circuit Breaker state metrics ─────────────────────────────────────
+    lines.push('');
+    lines.push('# HELP zeropay_circuit_breaker_state Current state of circuit breakers (0=CLOSED, 1=OPEN, 2=HALF_OPEN)');
+    lines.push('# TYPE zeropay_circuit_breaker_state gauge');
+    lines.push('# HELP zeropay_circuit_breaker_failures Total caught failures per circuit');
+    lines.push('# TYPE zeropay_circuit_breaker_failures counter');
+
+    const breakers = circuitRegistry.getBreakers();
+    for (const b of breakers) {
+      const stats = b.getStats();
+      const stateVal = stats.state === 'CLOSED' ? 0 : stats.state === 'OPEN' ? 1 : 2;
+      lines.push(`zeropay_circuit_breaker_state{breaker="${b.name}"} ${stateVal}`);
+      lines.push(`zeropay_circuit_breaker_failures{breaker="${b.name}"} ${stats.failureCount}`);
+    }
+
+    // ─── BullMQ queue depths metrics ─────────────────────────────────────────
+    lines.push('');
+    lines.push('# HELP zeropay_queue_jobs_total Number of BullMQ jobs in various states');
+    lines.push('# TYPE zeropay_queue_jobs_total gauge');
+
+    const queues = [
+      { name: 'tx-confirmation', queue: txConfirmationQueue },
+      { name: 'receipt-generation', queue: receiptQueue },
+      { name: 'notification-dispatch', queue: notificationQueue },
+      { name: 'invoice-expiry', queue: expiryQueue },
+      { name: 'daily-stats', queue: dailyStatsQueue },
+      { name: 'dispute-resolution', queue: disputeResolutionQueue },
+      { name: 'webhook-delivery', queue: webhookQueue },
+      { name: 'digital-delivery', queue: digitalDeliveryQueue },
+    ];
+
+    try {
+      const queueMetrics = await Promise.all(
+        queues.map(async ({ name, queue }) => {
+          const counts = await queue.getJobCounts('waiting', 'active', 'failed', 'delayed');
+          return { name, counts };
+        })
+      );
+
+      for (const q of queueMetrics) {
+        lines.push(`zeropay_queue_jobs_total{queue="${q.name}",state="waiting"} ${q.counts.waiting}`);
+        lines.push(`zeropay_queue_jobs_total{queue="${q.name}",state="active"} ${q.counts.active}`);
+        lines.push(`zeropay_queue_jobs_total{queue="${q.name}",state="failed"} ${q.counts.failed}`);
+        lines.push(`zeropay_queue_jobs_total{queue="${q.name}",state="delayed"} ${q.counts.delayed}`);
+      }
+    } catch (err: any) {
+      lines.push(`# ERROR: Failed to collect queue depths metrics: ${err.message}`);
     }
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');

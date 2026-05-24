@@ -14,12 +14,38 @@ export const upstashRedis = new Redis({
 // ─── TLS IORedis (for BullMQ — requires persistent TCP connection) ────────────
 // BullMQ cannot use HTTP Redis. This uses ioredis over TLS.
 
-export const bullMqRedis = new IORedis(env.UPSTASH_REDIS_TLS_URL, {
-  maxRetriesPerRequest: null, // Required by BullMQ
-  enableReadyCheck: false,
-  tls: {},
-  retryStrategy: (times) => Math.min(times * 50, 2000),
-});
+let tempRedis: IORedis;
+
+try {
+  if (env.UPSTASH_REDIS_TLS_URL.includes(',')) {
+    const nodes = env.UPSTASH_REDIS_TLS_URL.split(',').map((n) => n.trim());
+    tempRedis = new IORedis.Cluster(nodes, {
+      redisOptions: {
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
+        tls: {},
+      },
+    }) as any;
+    logger.info('BullMQ Redis Cluster initialized');
+  } else {
+    tempRedis = new IORedis(env.UPSTASH_REDIS_TLS_URL, {
+      maxRetriesPerRequest: null, // Required by BullMQ
+      enableReadyCheck: false,
+      tls: {},
+      retryStrategy: (times) => Math.min(times * 50, 2000),
+    });
+  }
+} catch (err: any) {
+  logger.error('Failed to initialize primary BullMQ Redis connection, attempting fallback', { detail: err.message });
+  tempRedis = new IORedis(env.UPSTASH_REDIS_TLS_URL, {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+    tls: {},
+    retryStrategy: (times) => Math.min(times * 100, 3000),
+  });
+}
+
+export const bullMqRedis = tempRedis;
 
 bullMqRedis.on('connect', () => logger.info('BullMQ Redis connected'));
 bullMqRedis.on('error', (err) => logger.error('BullMQ Redis error', { detail: err instanceof Error ? err.message : String(err) }));

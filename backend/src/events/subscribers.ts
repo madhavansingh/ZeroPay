@@ -8,6 +8,8 @@ import { Product } from '../models/Product';
 import { triggerWebhooks } from '../services/webhook.service';
 import { broadcastToRoom } from '../config/socketServer';
 import { logger } from '../config/logger';
+import { LedgerService } from '../services/ledger.service';
+import { env } from '../config/env';
 
 export function initSubscribers(): void {
   logger.info('[Subscribers] Initializing local domain event subscribers...');
@@ -31,6 +33,16 @@ export function initSubscribers(): void {
     try {
       const invoice = await Invoice.findOne({ invoiceId });
       if (invoice) {
+        // Record double-entry ledger lock
+        if (invoice.customerId) {
+          await LedgerService.recordLock({
+            invoiceId,
+            customerId: invoice.customerId.toString(),
+            amountLovelace: invoice.amountLovelace,
+            amountPaise: invoice.amountPaise,
+          }).catch((err) => logger.error('[Ledger] Failed to record lock ledger entries', { error: err.message }));
+        }
+
         const merchant = await Merchant.findById(invoice.merchantId);
         if (merchant) {
           await enqueueNotification({
@@ -95,6 +107,25 @@ export function initSubscribers(): void {
     try {
       const invoice = await Invoice.findOne({ invoiceId });
       if (invoice) {
+        // Record double-entry ledger milestone release
+        const proportion = payoutLovelace / invoice.amountLovelace;
+        const milestonePaise = Math.round(invoice.amountPaise * proportion);
+
+        const totalFeeLovelace = env.ESCROW_PLATFORM_FEE_LOVELACE;
+        const totalFeePaise = Math.round(invoice.amountPaise * 0.02);
+
+        const feeLovelace = Math.round(totalFeeLovelace * proportion);
+        const feePaise = Math.round(totalFeePaise * proportion);
+
+        await LedgerService.recordRelease({
+          invoiceId,
+          merchantId: invoice.merchantId.toString(),
+          amountLovelace: payoutLovelace,
+          amountPaise: milestonePaise,
+          feeLovelace,
+          feePaise,
+        }).catch((err) => logger.error('[Ledger] Failed to record release ledger entries', { error: err.message }));
+
         // Trigger merchant reputation recalculation
         await updateMerchantReputation(invoice.merchantId.toString());
 
@@ -238,6 +269,16 @@ export function initSubscribers(): void {
     try {
       const invoice = await Invoice.findOne({ invoiceId });
       if (invoice) {
+        // Record double-entry ledger refund
+        if (invoice.customerId) {
+          await LedgerService.recordRefund({
+            invoiceId,
+            customerId: invoice.customerId.toString(),
+            amountLovelace: payoutLovelace,
+            amountPaise: invoice.amountPaise,
+          }).catch((err) => logger.error('[Ledger] Failed to record refund ledger entries', { error: err.message }));
+        }
+
         const merchant = await Merchant.findById(invoice.merchantId);
         if (merchant) {
           await enqueueNotification({

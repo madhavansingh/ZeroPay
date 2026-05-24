@@ -7,6 +7,7 @@ import { Invoice } from '../models/Invoice';
 import { Evidence } from '../models/Evidence';
 import { env } from '../config/env';
 import { logger } from '../config/logger';
+import { circuitRegistry } from '../config/circuitBreaker';
 
 const router = Router();
 const upload = multer({
@@ -67,19 +68,27 @@ router.post(
 
       logger.info('[evidence] Pinning file to IPFS via Pinata', { invoiceId, filename: file.originalname });
 
-      const pinataRes = await axios.post<{ IpfsHash: string }>(
-        'https://api.pinata.cloud/pinning/pinFileToIPFS',
-        formData,
-        {
-          headers: {
-            Authorization: `Bearer ${env.PINATA_JWT}`,
-          },
-          maxBodyLength: Infinity,
-          timeout: 30_000,
+      const breaker = circuitRegistry.getOrCreate('pinata');
+      const ipfsHash = await breaker.execute(
+        async () => {
+          const pinataRes = await axios.post<{ IpfsHash: string }>(
+            'https://api.pinata.cloud/pinning/pinFileToIPFS',
+            formData,
+            {
+              headers: {
+                Authorization: `Bearer ${env.PINATA_JWT}`,
+              },
+              maxBodyLength: Infinity,
+              timeout: 30_000,
+            }
+          );
+          return pinataRes.data.IpfsHash;
+        },
+        (err: any) => {
+          logger.error('[evidence] Pinata upload breaker triggered or failed', { error: err.message });
+          throw err;
         }
       );
-
-      const ipfsHash = pinataRes.data.IpfsHash;
 
       // Save evidence record in MongoDB
       const evidence = await Evidence.create({

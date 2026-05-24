@@ -36,12 +36,16 @@ import webhookRoutes from './routes/webhook.routes';
 import reputationRoutes from './routes/reputation.routes';
 import analyticsRoutes from './routes/analytics.routes';
 import marketplaceRoutes from './routes/marketplace.routes';
+import opsRoutes from './routes/ops.routes';
 
 import { initSubscribers } from './events/subscribers';
 import { metricsCollector, createMetricsRouter } from './middleware/metrics.middleware';
+import { noSqlSanitizer, strictContentType } from './middleware/security.middleware';
 
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { createAdminRouter } from './admin/bullboard';
+import { requestContext } from './config/context';
+import { prerenderMiddleware } from './middleware/prerender.middleware';
 
 // ── Global error handlers (process-level safety net) ─────────────────────────
 process.on('uncaughtException', (err: Error) => {
@@ -86,18 +90,33 @@ async function bootstrap(): Promise<void> {
   // ── Metrics collection ────────────────────────────────────────────────────
   app.use(metricsCollector);
 
+  // ── Security Hardening Middleware ─────────────────────────────────────────
+  app.use(noSqlSanitizer);
+  app.use(strictContentType);
+
   // ── Request correlation ID + duration tracking ─────────────────────────────
+
   app.use((req: Request, res: Response, next: NextFunction) => {
     const requestId = (req.headers['x-request-id'] as string) || randomUUID();
+    const correlationId = (req.headers['x-correlation-id'] as string) || randomUUID();
     res.locals['requestId'] = requestId;
     res.setHeader('x-request-id', requestId);
+    res.setHeader('x-correlation-id', correlationId);
+
     const start = Date.now();
     res.on('finish', () => {
       const durationMs = Date.now() - start;
-      logger.info(`${req.method} ${req.path} ${res.statusCode}`, { requestId, durationMs });
+      logger.info(`${req.method} ${req.path} ${res.statusCode}`, { durationMs });
     });
-    next();
+
+    requestContext.run({ correlationId, requestId }, () => {
+      next();
+    });
   });
+
+
+  // ── SEO Public Storefront Crawler Prerender ────────────────────────────────
+  app.use(prerenderMiddleware);
 
   // ── Diagnostics / health / metrics routes ──────────────────────────────────
   app.use('/health', diagnosticsRouter);
@@ -136,6 +155,7 @@ async function bootstrap(): Promise<void> {
   app.use('/api/v1/reputation', reputationRoutes);
   app.use('/api/v1/analytics', analyticsRoutes);
   app.use('/api/v1/marketplace', marketplaceRoutes);
+  app.use('/api/v1/ops', opsRoutes);
 
   // ── Sentry Error Handler (must be before custom error handlers) ───────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

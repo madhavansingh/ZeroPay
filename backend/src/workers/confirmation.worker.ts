@@ -1,5 +1,7 @@
 import { Worker, Job } from 'bullmq';
 import { bullMqRedis } from '../config/redis';
+import { requestContext } from '../config/context';
+import { randomUUID } from 'crypto';
 import { env } from '../config/env';
 import { logger } from '../config/logger';
 import { Invoice } from '../models/Invoice';
@@ -20,7 +22,10 @@ export function startConfirmationWorker(): Worker {
     'tx-confirmation',
     async (job: Job<TxConfirmationJobData>) => {
       const { invoiceId, txHash, amountLovelace, paymentAddress } = job.data;
-      const ctx = { invoiceId, txHash, jobId: job.id ?? undefined, attempt: job.attemptsMade };
+      const correlationId = `job-confirmation-${job.id ?? randomUUID()}`;
+
+      return requestContext.run({ correlationId, invoiceId }, async () => {
+        const ctx = { invoiceId, txHash, jobId: job.id ?? undefined, attempt: job.attemptsMade };
 
       // Verify invoice is still in a pollable state
       const invoice = await Invoice.findOne({ invoiceId });
@@ -155,6 +160,7 @@ export function startConfirmationWorker(): Worker {
       ]);
 
       logger.info('[confirmation] Invoice confirmed', { ...ctx, confirmations, shopName: merchant?.shopName });
+      });
     },
     {
       connection: bullMqRedis,

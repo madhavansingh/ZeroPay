@@ -18,6 +18,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { requireAuth } from '../middleware/auth';
 import { disputeRateLimit } from '../middleware/rateLimit';
+import { riskMiddleware } from '../middleware/risk.middleware';
 import { Invoice, isValidTransition, EscrowState } from '../models/Invoice';
 import { Transaction } from '../models/Transaction';
 import { domainEventBus, DomainEvents } from '../events/eventBus';
@@ -99,6 +100,7 @@ router.get(
 
 router.post(
   '/:invoiceId/lock',
+  riskMiddleware,
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { customerAddress } = req.body as Record<string, unknown>;

@@ -11,10 +11,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── Security scanning ────────────────────────────────────────────────────────
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit dependencies for known vulnerabilities
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Scan for hardcoded secrets (private keys, mnemonics)
+        run: |
+          echo "Scanning for potential hardcoded secrets..."
+          # Fail if any file contains ed25519 private keys or 12/24-word mnemonic seed patterns
+          if grep -rE --include='*.ts' --include='*.js' --include='*.json' \
+            '(ed25519e_sk[0-9a-f]{120,}|xprv[0-9A-Za-z]{100,}|"mnemonic"\s*:\s*"[a-z]+ [a-z]+ [a-z]+)' \
+            --exclude-dir=node_modules --exclude-dir=dist . ; then
+            echo "ERROR: Potential hardcoded secrets detected!"
+            exit 1
+          fi
+          echo "Secret scan passed."
+
   # ── Type-check & lint ────────────────────────────────────────────────────────
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
+    needs: security
     steps:
       - uses: actions/checkout@v4
 
@@ -33,11 +66,31 @@ jobs:
       - name: Type-check frontend
         run: npm run type-check:web
 
+  # ── Backend tests ─────────────────────────────────────────────────────────────
+  test-backend:
+    name: Backend Unit Tests
+    runs-on: ubuntu-latest
+    needs: typecheck
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run backend unit tests
+        run: npm test --workspace=backend
+
   # ── Backend build ────────────────────────────────────────────────────────────
   build-backend:
     name: Build Backend
     runs-on: ubuntu-latest
-    needs: typecheck
+    needs: test-backend
     steps:
       - uses: actions/checkout@v4
 
@@ -87,3 +140,19 @@ jobs:
           name: frontend-dist
           path: apps/web/dist/
           retention-days: 7
+
+  # ── Docker Build Validation ───────────────────────────────────────────────────
+  docker-validate:
+    name: Docker Build Validation
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate backend Dockerfile syntax
+        run: docker build --target builder -f backend/Dockerfile . --no-cache --progress=plain 2>&1 | tail -20
+        continue-on-error: true
+
+      - name: Validate frontend Dockerfile syntax
+        run: docker build --target builder -f apps/web/Dockerfile . --no-cache --progress=plain 2>&1 | tail -20
+        continue-on-error: true

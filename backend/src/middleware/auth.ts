@@ -69,3 +69,13 @@ export function requireCustomer(
   }
   next();
 }
+
+export function requireRole(role: string) {
+  return function (req: Request, res: Response, next: NextFunction): void {
+    if (req.user.role !== role) {
+      res.status(403).json({ success: false, error: `${role} access required` });
+      return;
+    }
+    next();
+  };
+}

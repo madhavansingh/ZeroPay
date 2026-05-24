@@ -15,9 +15,18 @@ type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 const isProd = process.env.NODE_ENV === 'production';
 
+import { requestContext } from './context';
+
 function format(level: LogLevel, msg: string, ctx?: LogCtx): string {
   const ts = new Date().toISOString();
-  const ctxStr = ctx && Object.keys(ctx).length > 0 ? ' ' + JSON.stringify(ctx) : '';
+  
+  // Dynamically resolve correlationId and context elements
+  const store = requestContext.getStore();
+  const mergedCtx = store
+    ? { correlationId: store.correlationId, requestId: store.requestId, ...ctx }
+    : ctx;
+
+  const ctxStr = mergedCtx && Object.keys(mergedCtx).length > 0 ? ' ' + JSON.stringify(mergedCtx) : '';
   return `[${ts}] ${level.toUpperCase().padEnd(5)} ${msg}${ctxStr}`;
 }
 
