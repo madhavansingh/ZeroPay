@@ -18,6 +18,7 @@ export interface IInvoice extends Document {
   description?: string;
   // Immutable snapshots — set once at creation
   amountPaise: number;
+  originalAmountPaise?: number;
   amountLovelace: number;
   adaInrRate: number;
   paymentAddress: string;
@@ -50,6 +51,7 @@ export interface IInvoice extends Document {
   escrowCustomerAddress?: string; // Customer bech32 address used for locking
   disputeTxHash?: string;         // TX hash of the dispute transaction
   resolutionTxHash?: string;      // TX hash of the admin resolution TX
+  network?: 'cardano' | 'base';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -99,6 +101,9 @@ const invoiceSchema = new Schema<IInvoice>(
       required: true,
       min: 100, // minimum ₹1.00
       immutable: true,
+    },
+    originalAmountPaise: {
+      type: Number,
     },
     amountLovelace: {
       type: Number,
@@ -172,6 +177,12 @@ const invoiceSchema = new Schema<IInvoice>(
     escrowCustomerAddress: { type: String, match: /^addr(_test)?1[a-z0-9]+$/ },
     disputeTxHash: { type: String, sparse: true, match: /^[a-f0-9]{64}$/ },
     resolutionTxHash: { type: String, sparse: true, match: /^[a-f0-9]{64}$/ },
+    network: {
+      type: String,
+      enum: ['cardano', 'base'],
+      default: 'cardano',
+      index: true,
+    },
   },
   {
     timestamps: true,
@@ -189,20 +200,20 @@ invoiceSchema.index({ merchantId: 1, status: 1, settledAt: -1 }); // optimized 7
 
 // Prevent mutation of immutable snapshot fields after creation
 invoiceSchema.pre('save', function (next) {
-  if (!this.isNew) {
+  if (!this.isNew && this.status !== 'pending') {
     const immutableFields = ['amountPaise', 'amountLovelace', 'adaInrRate', 'paymentAddress'] as const;
     for (const field of immutableFields) {
       if (this.isModified(field)) {
         return next(new Error(`Cannot modify immutable field: ${field}`));
       }
     }
+  }
 
-    // Verify escrowState transition validity on save
-    if (this.isModified('escrowState')) {
-      const from = this.modifiedPaths().includes('escrowState') ? (this as any)._originalEscrowState || 'None' : this.escrowState;
-      if (!isValidTransition(from, this.escrowState)) {
-        return next(new Error(`Invalid escrow state transition from "${from}" to "${this.escrowState}"`));
-      }
+  // Verify escrowState transition validity on save
+  if (this.isModified('escrowState')) {
+    const from = this.modifiedPaths().includes('escrowState') ? (this as any)._originalEscrowState || 'None' : this.escrowState;
+    if (!isValidTransition(from, this.escrowState)) {
+      return next(new Error(`Invalid escrow state transition from "${from}" to "${this.escrowState}"`));
     }
   }
   next();

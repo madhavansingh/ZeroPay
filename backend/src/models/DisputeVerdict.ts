@@ -14,6 +14,7 @@ export interface IDisputeVerdict extends Document {
   executedTxHash?: string;
   humanReviewRequired: boolean;
   reviewedBy?: mongoose.Types.ObjectId;
+  assignedJurors?: mongoose.Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -67,6 +68,11 @@ const disputeVerdictSchema = new Schema<IDisputeVerdict>(
     reviewedBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',
+    },
+    assignedJurors: {
+      type: [Schema.Types.ObjectId],
+      ref: 'User',
+      default: [],
     },
   },
   {

@@ -34,24 +34,36 @@ import { enqueueNotification, enqueueTxConfirmation } from '../queues/queue.defi
 import { Merchant } from '../models/Merchant';
 import { injectChatMessage, mirrorEscrowToFirebase } from '../services/invoice.service';
 
+import { chainAdapterRegistry } from '../adapters/chain';
+
 const router = Router();
 
 // ─── Inline validation helpers ────────────────────────────────────────────────
 
 const INVOICE_ID_RE = /^INV-/;
 const CARDANO_ADDR_RE = /^addr(_test)?1[a-z0-9]+$/;
-const TX_HASH_RE = /^[a-f0-9]{64}$/;
+const EVM_ADDR_RE = /^0x[a-fA-F0-9]{40}$/;
+const CARDANO_TX_HASH_RE = /^[a-f0-9]{64}$/;
+const EVM_TX_HASH_RE = /^0x[a-fA-F0-9]{64}$/;
 
 function validateInvoiceId(id: unknown): id is string {
   return typeof id === 'string' && INVOICE_ID_RE.test(id);
 }
 
-function validateAddr(addr: unknown): addr is string {
-  return typeof addr === 'string' && CARDANO_ADDR_RE.test(addr);
+function validateAddr(addr: unknown, network: 'cardano' | 'base' = 'cardano'): addr is string {
+  if (typeof addr !== 'string') return false;
+  if (network === 'base') {
+    return EVM_ADDR_RE.test(addr);
+  }
+  return CARDANO_ADDR_RE.test(addr);
 }
 
-function validateTxHash(hash: unknown): hash is string {
-  return typeof hash === 'string' && TX_HASH_RE.test(hash);
+function validateTxHash(hash: unknown, network: 'cardano' | 'base' = 'cardano'): hash is string {
+  if (typeof hash !== 'string') return false;
+  if (network === 'base') {
+    return EVM_TX_HASH_RE.test(hash);
+  }
+  return CARDANO_TX_HASH_RE.test(hash);
 }
 
 function badRequest(res: Response, message: string): void {
@@ -105,9 +117,15 @@ router.post(
     try {
       const { customerAddress } = req.body as Record<string, unknown>;
       if (!validateInvoiceId(req.params.invoiceId)) { badRequest(res, 'Invalid invoiceId'); return; }
-      if (!validateAddr(customerAddress)) { badRequest(res, 'Invalid customerAddress'); return; }
 
-      const result = await buildLockTx(req.params.invoiceId, customerAddress);
+      const invoice = await Invoice.findOne({ invoiceId: req.params.invoiceId });
+      if (!invoice) { res.status(404).json({ success: false, error: 'Invoice not found' }); return; }
+      const network = invoice.network ?? 'cardano';
+
+      if (!validateAddr(customerAddress, network)) { badRequest(res, 'Invalid customerAddress'); return; }
+
+      const adapter = chainAdapterRegistry.getAdapter(network);
+      const result = await adapter.buildLockTx(req.params.invoiceId, invoice.amountLovelace, customerAddress);
       res.json({ success: true, data: result });
     } catch (err) {
       logger.error('[escrow/lock] Build failed', {
@@ -128,11 +146,14 @@ router.post(
     try {
       const { txHash, customerAddress } = req.body as Record<string, unknown>;
       if (!validateInvoiceId(req.params.invoiceId)) { badRequest(res, 'Invalid invoiceId'); return; }
-      if (!validateTxHash(txHash)) { badRequest(res, 'Invalid txHash'); return; }
-      if (!validateAddr(customerAddress)) { badRequest(res, 'Invalid customerAddress'); return; }
 
       const invoice = await Invoice.findOne({ invoiceId: req.params.invoiceId });
       if (!invoice) { res.status(404).json({ success: false, error: 'Invoice not found' }); return; }
+      const network = invoice.network ?? 'cardano';
+
+      if (!validateTxHash(txHash, network)) { badRequest(res, 'Invalid txHash'); return; }
+      if (!validateAddr(customerAddress, network)) { badRequest(res, 'Invalid customerAddress'); return; }
+
       if (!isValidTransition(invoice.escrowState as EscrowState, 'Locked')) {
         res.status(409).json({ success: false, error: `Invalid escrow state transition from "${invoice.escrowState}" to "Locked"` });
         return;
@@ -242,8 +263,25 @@ router.post(
         req.body as Record<string, unknown>;
 
       if (!validateInvoiceId(req.params.invoiceId)) { badRequest(res, 'Invalid invoiceId'); return; }
-      if (!validateAddr(customerAddress)) { badRequest(res, 'Invalid customerAddress'); return; }
-      if (scriptUtxoTxHash !== undefined && !validateTxHash(scriptUtxoTxHash)) { badRequest(res, 'Invalid scriptUtxoTxHash'); return; }
+
+      const invoice = await Invoice.findOne({ invoiceId: req.params.invoiceId });
+      if (!invoice) { res.status(404).json({ success: false, error: 'Invoice not found' }); return; }
+      const network = invoice.network ?? 'cardano';
+
+      if (!validateAddr(customerAddress, network)) { badRequest(res, 'Invalid customerAddress'); return; }
+
+      if (network === 'base') {
+        const adapter = chainAdapterRegistry.getAdapter(network);
+        const result = await adapter.buildReleaseTx(
+          req.params.invoiceId,
+          invoice.milestoneIndex,
+          customerAddress
+        );
+        res.json({ success: true, data: result });
+        return;
+      }
+
+      if (scriptUtxoTxHash !== undefined && !validateTxHash(scriptUtxoTxHash, network)) { badRequest(res, 'Invalid scriptUtxoTxHash'); return; }
       if (scriptUtxoIndex !== undefined && (typeof scriptUtxoIndex !== 'number' || scriptUtxoIndex < 0)) { badRequest(res, 'Invalid scriptUtxoIndex'); return; }
       if (payoutLovelace !== undefined && (typeof payoutLovelace !== 'number' || payoutLovelace < 1000000)) { badRequest(res, 'payoutLovelace must be >= 1000000'); return; }
 
@@ -272,11 +310,16 @@ router.post(
     try {
       const { txHash, payoutLovelace } = req.body as Record<string, unknown>;
       if (!validateInvoiceId(req.params.invoiceId)) { badRequest(res, 'Invalid invoiceId'); return; }
-      if (!validateTxHash(txHash)) { badRequest(res, 'Invalid txHash'); return; }
-      if (typeof payoutLovelace !== 'number' || payoutLovelace < 1000000) { badRequest(res, 'payoutLovelace must be >= 1000000'); return; }
 
       const invoice = await Invoice.findOne({ invoiceId: req.params.invoiceId });
       if (!invoice) { res.status(404).json({ success: false, error: 'Invoice not found' }); return; }
+      const network = invoice.network ?? 'cardano';
+
+      if (!validateTxHash(txHash, network)) { badRequest(res, 'Invalid txHash'); return; }
+      if (network === 'cardano' && (typeof payoutLovelace !== 'number' || payoutLovelace < 1000000)) {
+        badRequest(res, 'payoutLovelace must be >= 1000000');
+        return;
+      }
       const currentIndex = invoice.milestoneIndex;
       const totalMilestones = invoice.totalMilestones || 1;
       const isFinal = currentIndex + 1 >= totalMilestones;
@@ -357,8 +400,19 @@ router.post(
     try {
       const { signerAddress, scriptUtxoTxHash, scriptUtxoIndex } = req.body as Record<string, unknown>;
       if (!validateInvoiceId(req.params.invoiceId)) { badRequest(res, 'Invalid invoiceId'); return; }
-      if (!validateAddr(signerAddress)) { badRequest(res, 'Invalid signerAddress'); return; }
-      if (scriptUtxoTxHash !== undefined && !validateTxHash(scriptUtxoTxHash)) { badRequest(res, 'Invalid scriptUtxoTxHash'); return; }
+
+      const invoice = await Invoice.findOne({ invoiceId: req.params.invoiceId });
+      if (!invoice) { res.status(404).json({ success: false, error: 'Invoice not found' }); return; }
+      const network = invoice.network ?? 'cardano';
+
+      if (!validateAddr(signerAddress, network)) { badRequest(res, 'Invalid signerAddress'); return; }
+
+      if (network === 'base') {
+        res.json({ success: true, data: { message: 'Base dispute initiated off-chain' } });
+        return;
+      }
+
+      if (scriptUtxoTxHash !== undefined && !validateTxHash(scriptUtxoTxHash, network)) { badRequest(res, 'Invalid scriptUtxoTxHash'); return; }
       if (scriptUtxoIndex !== undefined && (typeof scriptUtxoIndex !== 'number' || scriptUtxoIndex < 0)) { badRequest(res, 'Invalid scriptUtxoIndex'); return; }
 
       const result = await buildRaiseDisputeTx(
@@ -388,10 +442,12 @@ router.post(
     try {
       const { txHash } = req.body as Record<string, unknown>;
       if (!validateInvoiceId(req.params.invoiceId)) { badRequest(res, 'Invalid invoiceId'); return; }
-      if (!validateTxHash(txHash)) { badRequest(res, 'Invalid txHash'); return; }
 
       const invoice = await Invoice.findOne({ invoiceId: req.params.invoiceId });
       if (!invoice) { res.status(404).json({ success: false, error: 'Invoice not found' }); return; }
+      const network = invoice.network ?? 'cardano';
+
+      if (txHash !== undefined && !validateTxHash(txHash, network)) { badRequest(res, 'Invalid txHash'); return; }
 
       if (!isValidTransition(invoice.escrowState as EscrowState, 'Disputed')) {
         res.status(409).json({ success: false, error: `Invalid escrow state transition from "${invoice.escrowState}" to "Disputed"` });
@@ -437,9 +493,28 @@ router.post(
         req.body as Record<string, unknown>;
 
       if (!validateInvoiceId(req.params.invoiceId)) { badRequest(res, 'Invalid invoiceId'); return; }
-      if (!validateAddr(adminAddress)) { badRequest(res, 'Invalid adminAddress'); return; }
-      if (!validateAddr(customerAddress)) { badRequest(res, 'Invalid customerAddress'); return; }
-      if (scriptUtxoTxHash !== undefined && !validateTxHash(scriptUtxoTxHash)) { badRequest(res, 'Invalid scriptUtxoTxHash'); return; }
+
+      const invoice = await Invoice.findOne({ invoiceId: req.params.invoiceId });
+      if (!invoice) { res.status(404).json({ success: false, error: 'Invoice not found' }); return; }
+      const network = invoice.network ?? 'cardano';
+
+      if (!validateAddr(adminAddress, network)) { badRequest(res, 'Invalid adminAddress'); return; }
+      if (!validateAddr(customerAddress, network)) { badRequest(res, 'Invalid customerAddress'); return; }
+
+      if (network === 'base') {
+        const adapter = chainAdapterRegistry.getAdapter(network);
+        const merchantPayout = typeof merchantPayoutLovelace === 'number' ? merchantPayoutLovelace : invoice.amountLovelace;
+        const customerPayout = typeof customerPayoutLovelace === 'number' ? customerPayoutLovelace : 0;
+        const result = await adapter.buildResolveTx(
+          req.params.invoiceId,
+          merchantPayout,
+          customerPayout
+        );
+        res.json({ success: true, data: result });
+        return;
+      }
+
+      if (scriptUtxoTxHash !== undefined && !validateTxHash(scriptUtxoTxHash, network)) { badRequest(res, 'Invalid scriptUtxoTxHash'); return; }
       if (scriptUtxoIndex !== undefined && (typeof scriptUtxoIndex !== 'number' || scriptUtxoIndex < 0)) { badRequest(res, 'Invalid scriptUtxoIndex'); return; }
       if (merchantPayoutLovelace !== undefined && (typeof merchantPayoutLovelace !== 'number' || merchantPayoutLovelace < 0)) { badRequest(res, 'Invalid merchantPayoutLovelace'); return; }
       if (customerPayoutLovelace !== undefined && (typeof customerPayoutLovelace !== 'number' || customerPayoutLovelace < 0)) { badRequest(res, 'Invalid customerPayoutLovelace'); return; }
@@ -473,10 +548,12 @@ router.post(
     try {
       const { txHash } = req.body as Record<string, unknown>;
       if (!validateInvoiceId(req.params.invoiceId)) { badRequest(res, 'Invalid invoiceId'); return; }
-      if (!validateTxHash(txHash)) { badRequest(res, 'Invalid txHash'); return; }
 
       const invoice = await Invoice.findOne({ invoiceId: req.params.invoiceId });
       if (!invoice) { res.status(404).json({ success: false, error: 'Invoice not found' }); return; }
+      const network = invoice.network ?? 'cardano';
+
+      if (!validateTxHash(txHash, network)) { badRequest(res, 'Invalid txHash'); return; }
 
       if (!isValidTransition(invoice.escrowState as EscrowState, 'Resolved')) {
         res.status(409).json({ success: false, error: `Invalid escrow state transition from "${invoice.escrowState}" to "Resolved"` });

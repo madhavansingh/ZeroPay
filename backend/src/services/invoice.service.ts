@@ -22,6 +22,7 @@ export interface CreateInvoiceInput {
   productId?: string;
   chatRoomId?: string;
   milestones?: Array<{ title: string; amountPaise: number }>;
+  network?: 'cardano' | 'base';
 }
 
 export async function createInvoice(input: CreateInvoiceInput): Promise<IInvoice> {
@@ -86,6 +87,7 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<IInvoice
     totalMilestones,
     milestoneIndex: 0,
     isDisputed: false,
+    network: input.network ?? 'cardano',
   });
 
   // Mirror status to Firebase RTDB for real-time frontend updates

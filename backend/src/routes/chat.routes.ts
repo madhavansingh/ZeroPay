@@ -1,9 +1,10 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { getFirebaseDatabase } from '../config/firebase-admin';
 import { Merchant } from '../models/Merchant';
+import { runNegotiationStep } from '../services/agent/negotiationAgent';
 
 const router = Router();
 
@@ -109,5 +110,79 @@ router.get('/rooms/:roomId', requireAuth, async (req: Request, res: Response): P
 
   res.json({ success: true, data: { room: roomSnap.val(), messages } });
 });
+
+// ─── POST /chat/rooms/:roomId/messages ─────────────────────────────────────────
+const sendMessageSchema = z.object({
+  invoiceId: z.string().min(1),
+  message: z.string().min(1),
+});
+
+router.post(
+  '/rooms/:roomId/messages',
+  requireAuth,
+  validate(sendMessageSchema),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { roomId } = req.params;
+      const { invoiceId, message } = req.body as { invoiceId: string; message: string };
+      const userId = req.user._id.toString();
+
+      const db = getFirebaseDatabase();
+
+      // 1. Push customer's message to Firebase Chatroom messages node
+      const customerMsgRef = db.ref(`/chats/${roomId}/messages`).push();
+      const customerMsg = {
+        id: customerMsgRef.key,
+        senderId: userId,
+        type: 'text',
+        timestamp: Date.now(),
+        payload: { text: message },
+      };
+      await customerMsgRef.set(customerMsg);
+
+      // Update lastMessage on chatroom
+      await db.ref(`/chatrooms/${roomId}`).update({
+        lastMessage: {
+          preview: message.slice(0, 60),
+          timestamp: Date.now(),
+        },
+      });
+
+      // 2. Trigger AI negotiation agent step
+      const aiResult = await runNegotiationStep(invoiceId, message, userId, res.locals.requestId);
+
+      // 3. Push AI agent's response message to Firebase
+      const aiMsgRef = db.ref(`/chats/${roomId}/messages`).push();
+      const aiMsg = {
+        id: aiMsgRef.key,
+        senderId: 'zeropay-ai-agent',
+        type: 'text',
+        timestamp: Date.now(),
+        payload: { text: aiResult.responseMessage },
+      };
+      await aiMsgRef.set(aiMsg);
+
+      // Update lastMessage on chatroom to AI response
+      await db.ref(`/chatrooms/${roomId}`).update({
+        lastMessage: {
+          preview: aiResult.responseMessage.slice(0, 60),
+          timestamp: Date.now(),
+        },
+      });
+
+      res.json({
+        success: true,
+        data: {
+          customerMessage: customerMsg,
+          aiResponse: aiMsg,
+          dealAgreed: aiResult.dealAgreed,
+          proposedPricePaise: aiResult.proposedPricePaise,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 export default router;

@@ -26,6 +26,7 @@ const createSchema = z.object({
       })
     )
     .optional(),
+  network: z.enum(['cardano', 'base']).optional(),
 });
 
 // POST /api/v1/invoices/create
@@ -37,7 +38,7 @@ router.post(
   validate(createSchema),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const { amountPaise, description, chatRoomId, customerId, milestones } =
+      const { amountPaise, description, chatRoomId, customerId, milestones, network } =
         req.body as z.infer<typeof createSchema>;
 
       const merchant = await Merchant.findOne({ userId: req.user._id });
@@ -53,6 +54,7 @@ router.post(
         chatRoomId,
         customerId,
         milestones,
+        network,
       });
 
       res.status(201).json({
@@ -66,6 +68,7 @@ router.post(
           status: invoice.status,
           expiresAt: invoice.expiresAt,
           description: invoice.description,
+          network: invoice.network,
         },
       });
     } catch (err: unknown) {
@@ -108,6 +111,7 @@ router.get('/:invoiceId', requireAuth, async (req: Request, res: Response): Prom
         agreementHash: invoice.agreementHash,
         metadataHash: invoice.metadataHash,
         contractVersion: invoice.contractVersion,
+        network: invoice.network,
       },
     });
   } catch (err: unknown) {

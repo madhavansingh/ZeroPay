@@ -512,3 +512,63 @@ export async function buildAdminResolveTx(
 
   return { unsignedCbor, scriptAddress: ESCROW_SCRIPT_ADDRESS, invoiceId };
 }
+
+// ─── 5. Customer Refund ──────────────────────────────────────────────────────
+
+export async function buildRefundTx(
+  invoiceId: string,
+  customerAddress: string,
+  scriptUtxoTxHash?: string,
+  scriptUtxoIndex?: number
+): Promise<EscrowTxResult> {
+  const invoice = await Invoice.findOne({ invoiceId });
+  if (!invoice) throw new Error('Invoice not found');
+  if (invoice.escrowState === 'Disputed')
+    throw new Error('Cannot refund a disputed escrow — resolve it via admin channels');
+  if (invoice.escrowState !== 'Locked' && invoice.escrowState !== 'PartiallyReleased')
+    throw new Error(`Cannot refund escrow in state: ${invoice.escrowState}`);
+
+  const provider = new BlockfrostProvider(env.BLOCKFROST_PROJECT_ID);
+  const utxos = await provider.fetchAddressUTxOs(customerAddress);
+  if (!utxos || utxos.length === 0)
+    throw new Error('No UTxOs found for customer address');
+
+  const customerPkh = addressToPkh(customerAddress);
+
+  let activeTxHash = scriptUtxoTxHash;
+  let activeIndex = scriptUtxoIndex;
+  if (!activeTxHash || activeIndex === undefined) {
+    const activeUtxo = await findActiveEscrowUtxo(invoiceId);
+    if (!activeUtxo) {
+      throw new Error(`No active escrow UTxO found on-chain for invoice ${invoiceId}`);
+    }
+    activeTxHash = activeUtxo.txHash;
+    activeIndex = activeUtxo.txIndex;
+  }
+
+  const redeemer: Data = { alternative: 2, fields: [] };
+
+  const remainingLovelace = invoice.amountLovelace - invoice.milestones
+    .filter((m) => m.status === 'released')
+    .reduce((s, m) => s + m.amountLovelace, 0);
+
+  const refundAmount = remainingLovelace + env.ESCROW_PLATFORM_FEE_LOVELACE;
+
+  const unsignedCbor = await new MeshTxBuilder({ fetcher: provider, verbose: false })
+    .txIn(activeTxHash, activeIndex)
+    .txInInlineDatumPresent()
+    .txInRedeemerValue(redeemer)
+    .spendingPlutusScriptV3()
+    .txInScript(ESCROW_SCRIPT_CBOR)
+    .txOut(customerAddress, [{ unit: 'lovelace', quantity: refundAmount.toString() }])
+    .requiredSignerHash(customerPkh)
+    .changeAddress(customerAddress)
+    .selectUtxosFrom(utxos)
+    .invalidBefore(Math.floor(Date.now() / 1000) + 10)
+    .complete();
+
+  logger.info('[escrow] Customer refund TX built', { invoiceId, customerAddress, refundAmount });
+
+  return { unsignedCbor, scriptAddress: ESCROW_SCRIPT_ADDRESS, invoiceId };
+}
+

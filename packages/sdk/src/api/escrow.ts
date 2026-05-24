@@ -5,8 +5,9 @@ export async function createInvoice(data: {
   amountPaise: number;
   description: string;
   milestones?: { title: string; amountPaise: number }[];
+  network?: 'cardano' | 'base';
 }): Promise<ApiResponse> {
-  const res = await apiClient.post('/api/v1/invoices', data);
+  const res = await apiClient.post('/api/v1/invoices/create', data);
   return res.data;
 }
 

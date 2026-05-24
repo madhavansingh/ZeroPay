@@ -53,6 +53,7 @@ export interface Invoice {
   escrowCustomerAddress?: string;
   disputeTxHash?: string;
   resolutionTxHash?: string;
+  network?: 'cardano' | 'base';
 }
 
 // ─── User Types ───────────────────────────────────────────────────────────────
