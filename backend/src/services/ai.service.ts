@@ -526,3 +526,384 @@ export async function explainEscrowStatus(invoiceId: string): Promise<EscrowExpl
     plainEnglishStatus: 'Syncing',
   };
 }
+
+// ─── Phase 3: Advanced AI Commerce Workflows ──────────────────────────────────
+
+export interface InvoiceDraft {
+  lineItems: Array<{ title: string; pricePaise: number }>;
+  suggestedPrice: number;
+  professionalTitle: string;
+  termsText: string;
+  estimatedCompletionDays: number;
+}
+
+export interface MerchantInsight {
+  revenueTrendNarrative: string;
+  topCategories: string[];
+  pricingSuggestions: string[];
+  peakHours: string;
+  retentionSignals: string;
+}
+
+export interface PricingSuggestion {
+  suggestedMinLovelace: number;
+  suggestedMaxLovelace: number;
+  benchmarkContext: string;
+  rationale: string;
+}
+
+const invoiceDraftResponseSchema = z.object({
+  lineItems: z.array(
+    z.object({
+      title: z.string(),
+      pricePaise: z.number().int().positive(),
+    })
+  ),
+  suggestedPrice: z.number().int().positive(),
+  professionalTitle: z.string(),
+  termsText: z.string(),
+  estimatedCompletionDays: z.number().int().positive(),
+});
+
+const merchantInsightResponseSchema = z.object({
+  revenueTrendNarrative: z.string(),
+  topCategories: z.array(z.string()),
+  pricingSuggestions: z.array(z.string()),
+  peakHours: z.string(),
+  retentionSignals: z.string(),
+});
+
+const pricingSuggestionResponseSchema = z.object({
+  suggestedMinLovelace: z.number().int().positive(),
+  suggestedMaxLovelace: z.number().int().positive(),
+  benchmarkContext: z.string(),
+  rationale: z.string(),
+});
+
+/**
+ * Generate invoice draft details based on merchant description, category and price preference
+ */
+export async function generateInvoiceDraft(
+  description: string,
+  category: string,
+  actorId: string = 'system',
+  requestId?: string
+): Promise<InvoiceDraft> {
+  const startTime = Date.now();
+  const promptTemplate = `You are a professional invoice drafting assistant. Given a category: "{{category}}" and description of work: "{{description}}", generate a detailed invoice proposal draft. Use standard Indian commerce pricing models.`;
+  const prompt = promptTemplate.replace('{{category}}', category).replace('{{description}}', description);
+
+  const responseSchema = {
+    type: 'OBJECT',
+    properties: {
+      lineItems: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            title: { type: 'STRING' },
+            pricePaise: { type: 'INTEGER' },
+          },
+          required: ['title', 'pricePaise'],
+        },
+      },
+      suggestedPrice: { type: 'INTEGER' },
+      professionalTitle: { type: 'STRING' },
+      termsText: { type: 'STRING' },
+      estimatedCompletionDays: { type: 'INTEGER' },
+    },
+    required: ['lineItems', 'suggestedPrice', 'professionalTitle', 'termsText', 'estimatedCompletionDays'],
+  };
+
+  const inputData = { description, category };
+
+  if (isMockMode) {
+    const mockOutput: InvoiceDraft = {
+      lineItems: [
+        { title: 'Project Consultation & Requirements Drafting', pricePaise: 500000 },
+        { title: 'Full Design Mockups and Wireframe Handover', pricePaise: 1500000 },
+      ],
+      suggestedPrice: 2000000,
+      professionalTitle: `${category.charAt(0).toUpperCase() + category.slice(1)} Consulting Services`,
+      termsText: 'Payment locked in ZeroPay escrow. 100% payout released on completion of milestones.',
+      estimatedCompletionDays: 14,
+    };
+
+    await AIAuditLog.create({
+      timestamp: new Date(),
+      action: 'generate-invoice-draft',
+      actorId,
+      requestId,
+      promptTemplate,
+      inputData,
+      rawResponse: JSON.stringify(mockOutput),
+      parsedResponse: mockOutput,
+      confidenceScore: 95,
+      latencyMs: Date.now() - startTime,
+      status: 'success',
+    });
+
+    return mockOutput;
+  }
+
+  try {
+    const { text, latencyMs } = await generateContentWithRetry(prompt, responseSchema);
+    const rawParsed = JSON.parse(text);
+
+    const parsed = invoiceDraftResponseSchema.safeParse(rawParsed);
+    if (!parsed.success) {
+      throw new Error(`Zod validation failure: ${JSON.stringify(parsed.error.flatten())}`);
+    }
+
+    const draft = parsed.data;
+
+    await AIAuditLog.create({
+      timestamp: new Date(),
+      action: 'generate-invoice-draft',
+      actorId,
+      requestId,
+      promptTemplate,
+      inputData,
+      rawResponse: text,
+      parsedResponse: draft,
+      confidenceScore: 90,
+      latencyMs,
+      status: 'success',
+    });
+
+    return draft;
+  } catch (err: any) {
+    const latencyMs = Date.now() - startTime;
+    logger.error('[AI Service] Failed to generate invoice draft, returning safe fallback.', { error: err.message });
+
+    await AIAuditLog.create({
+      timestamp: new Date(),
+      action: 'generate-invoice-draft',
+      actorId,
+      requestId,
+      promptTemplate,
+      inputData,
+      validationErrors: err.message,
+      latencyMs,
+      status: 'failure',
+    });
+
+    return {
+      lineItems: [{ title: 'Service Delivery', pricePaise: 1000000 }],
+      suggestedPrice: 1000000,
+      professionalTitle: 'Consulting Services',
+      termsText: 'Payment locked in ZeroPay escrow.',
+      estimatedCompletionDays: 7,
+    };
+  }
+}
+
+/**
+ * Generate business analytics narrative and strategies for a merchant
+ */
+export async function generateMerchantInsight(
+  merchantMongoId: string,
+  windowDays: number = 30,
+  actorId: string = 'system',
+  requestId?: string
+): Promise<MerchantInsight> {
+  const startTime = Date.now();
+  const promptTemplate = `Generate detailed business and pricing intelligence strategies for Merchant ID: {{merchantMongoId}} over the last {{windowDays}} days. Use modern marketing psychology principles.`;
+  const prompt = promptTemplate.replace('{{merchantMongoId}}', merchantMongoId).replace('{{windowDays}}', String(windowDays));
+
+  const responseSchema = {
+    type: 'OBJECT',
+    properties: {
+      revenueTrendNarrative: { type: 'STRING' },
+      topCategories: { type: 'ARRAY', items: { type: 'STRING' } },
+      pricingSuggestions: { type: 'ARRAY', items: { type: 'STRING' } },
+      peakHours: { type: 'STRING' },
+      retentionSignals: { type: 'STRING' },
+    },
+    required: ['revenueTrendNarrative', 'topCategories', 'pricingSuggestions', 'peakHours', 'retentionSignals'],
+  };
+
+  const inputData = { merchantMongoId, windowDays };
+
+  if (isMockMode) {
+    const mockOutput: MerchantInsight = {
+      revenueTrendNarrative: 'Revenue has maintained a robust upward trend, showing an increase in escrow volume with high customer satisfaction scores.',
+      topCategories: ['Web Development', 'UIUX Design Consultancy', 'API Integrations'],
+      pricingSuggestions: [
+        'Bundle wireframing and initial consulting services to capture higher margin early commitments.',
+        'Offer a 5% discount for payments locked fully on Cardano escrow with multiple milestones.',
+      ],
+      peakHours: 'Tuesdays and Thursdays, 14:00 - 18:00 IST',
+      retentionSignals: 'Excellent progressive release milestone metrics with low dispute rates point to strong customer trust and repeat purchasing.',
+    };
+
+    await AIAuditLog.create({
+      timestamp: new Date(),
+      action: 'generate-merchant-insight',
+      actorId,
+      requestId,
+      promptTemplate,
+      inputData,
+      rawResponse: JSON.stringify(mockOutput),
+      parsedResponse: mockOutput,
+      confidenceScore: 98,
+      latencyMs: Date.now() - startTime,
+      status: 'success',
+    });
+
+    return mockOutput;
+  }
+
+  try {
+    const { text, latencyMs } = await generateContentWithRetry(prompt, responseSchema);
+    const rawParsed = JSON.parse(text);
+
+    const parsed = merchantInsightResponseSchema.safeParse(rawParsed);
+    if (!parsed.success) {
+      throw new Error(`Zod validation failure: ${JSON.stringify(parsed.error.flatten())}`);
+    }
+
+    const insights = parsed.data;
+
+    await AIAuditLog.create({
+      timestamp: new Date(),
+      action: 'generate-merchant-insight',
+      actorId,
+      requestId,
+      promptTemplate,
+      inputData,
+      rawResponse: text,
+      parsedResponse: insights,
+      confidenceScore: 92,
+      latencyMs,
+      status: 'success',
+    });
+
+    return insights;
+  } catch (err: any) {
+    const latencyMs = Date.now() - startTime;
+    logger.error('[AI Service] Failed to generate merchant insights, returning fallback.', { error: err.message });
+
+    await AIAuditLog.create({
+      timestamp: new Date(),
+      action: 'generate-merchant-insight',
+      actorId,
+      requestId,
+      promptTemplate,
+      inputData,
+      validationErrors: err.message,
+      latencyMs,
+      status: 'failure',
+    });
+
+    return {
+      revenueTrendNarrative: 'Consistent steady activity observed across recent transaction lists.',
+      topCategories: ['General Services'],
+      pricingSuggestions: ['Consider standard progressive milestone payments.'],
+      peakHours: 'Business standard hours',
+      retentionSignals: 'Reliable completion records suggest steady customer loyalty.',
+    };
+  }
+}
+
+/**
+ * Suggest optimal min/max price and rationale for a specific service description
+ */
+export async function suggestPricingForService(
+  description: string,
+  category: string,
+  actorId: string = 'system',
+  requestId?: string
+): Promise<PricingSuggestion> {
+  const startTime = Date.now();
+  const promptTemplate = `Analyze this service description: "{{description}}" in the category: "{{category}}". Suggest an optimal ADA pricing range in Lovelace (1 ADA = 1,000,000 Lovelace) based on standard marketplace benchmarks.`;
+  const prompt = promptTemplate.replace('{{category}}', category).replace('{{description}}', description);
+
+  const responseSchema = {
+    type: 'OBJECT',
+    properties: {
+      suggestedMinLovelace: { type: 'INTEGER' },
+      suggestedMaxLovelace: { type: 'INTEGER' },
+      benchmarkContext: { type: 'STRING' },
+      rationale: { type: 'STRING' },
+    },
+    required: ['suggestedMinLovelace', 'suggestedMaxLovelace', 'benchmarkContext', 'rationale'],
+  };
+
+  const inputData = { description, category };
+
+  if (isMockMode) {
+    const mockOutput: PricingSuggestion = {
+      suggestedMinLovelace: 50_000_000, // 50 ADA
+      suggestedMaxLovelace: 150_000_000, // 150 ADA
+      benchmarkContext: 'Similar digital design and consultation services typically price between 40 to 160 ADA on global networks.',
+      rationale: 'Based on complexity and the standard hourly commitment of 3-5 hours, a rate within this range secures fair value for both parties.',
+    };
+
+    await AIAuditLog.create({
+      timestamp: new Date(),
+      action: 'suggest-pricing-for-service',
+      actorId,
+      requestId,
+      promptTemplate,
+      inputData,
+      rawResponse: JSON.stringify(mockOutput),
+      parsedResponse: mockOutput,
+      confidenceScore: 92,
+      latencyMs: Date.now() - startTime,
+      status: 'success',
+    });
+
+    return mockOutput;
+  }
+
+  try {
+    const { text, latencyMs } = await generateContentWithRetry(prompt, responseSchema);
+    const rawParsed = JSON.parse(text);
+
+    const parsed = pricingSuggestionResponseSchema.safeParse(rawParsed);
+    if (!parsed.success) {
+      throw new Error(`Zod validation failure: ${JSON.stringify(parsed.error.flatten())}`);
+    }
+
+    const suggestion = parsed.data;
+
+    await AIAuditLog.create({
+      timestamp: new Date(),
+      action: 'suggest-pricing-for-service',
+      actorId,
+      requestId,
+      promptTemplate,
+      inputData,
+      rawResponse: text,
+      parsedResponse: suggestion,
+      confidenceScore: 88,
+      latencyMs,
+      status: 'success',
+    });
+
+    return suggestion;
+  } catch (err: any) {
+    const latencyMs = Date.now() - startTime;
+    logger.error('[AI Service] Failed to suggest pricing, returning fallback.', { error: err.message });
+
+    await AIAuditLog.create({
+      timestamp: new Date(),
+      action: 'suggest-pricing-for-service',
+      actorId,
+      requestId,
+      promptTemplate,
+      inputData,
+      validationErrors: err.message,
+      latencyMs,
+      status: 'failure',
+    });
+
+    return {
+      suggestedMinLovelace: 20_000_000, // 20 ADA
+      suggestedMaxLovelace: 100_000_000, // 100 ADA
+      benchmarkContext: 'Generic services on Cardano range from 10 to 100 ADA.',
+      rationale: 'Fallback suggestion for standard task-based freelancing.',
+    };
+  }
+}

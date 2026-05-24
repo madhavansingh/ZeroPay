@@ -3,6 +3,8 @@ import { Invoice, IInvoice } from '../models/Invoice';
 import { Merchant } from '../models/Merchant';
 import { getFirebaseDatabase } from '../config/firebase-admin';
 import { getAdaInrRate, paiseToLovelace } from './price.service';
+import { triggerWebhooks } from './webhook.service';
+import { logger } from '../config/logger';
 import type { InvoiceStatus } from '@zeropay/shared-types';
 
 
@@ -110,6 +112,16 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<IInvoice
       expiresAt: expiresAt.toISOString(),
     });
   }
+
+  // Trigger invoice.created webhook (fire-and-forget)
+  triggerWebhooks(merchant._id.toString(), 'invoice.created', {
+    invoiceId: invoice.invoiceId,
+    amountPaise: invoice.amountPaise,
+    amountLovelace: invoice.amountLovelace,
+    adaInrRate: invoice.adaInrRate,
+    status: invoice.status,
+    expiresAt: invoice.expiresAt,
+  }).catch((err) => logger.warn('Failed to trigger invoice.created webhook', { detail: err.message }));
 
   return invoice;
 }

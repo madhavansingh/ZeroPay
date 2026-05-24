@@ -182,3 +182,156 @@ export const submitEscrowDispute = (invoiceId: string, txHash: string) =>
 /** Get live escrow state for an invoice */
 export const getEscrowStatus = (invoiceId: string) =>
   http.get<ApiResponse<EscrowStatus>>(`/escrow/${invoiceId}/status`).then((r) => r.data);
+
+// ─── Storefronts ─────────────────────────────────────────────────────────────
+
+export const getStorefrontPublic = (slug: string) =>
+  http.get<ApiResponse>(`/storefronts/${slug}`).then((r) => r.data);
+
+export const getStorefrontCatalog = (slug: string) =>
+  http.get<ApiResponse>(`/storefronts/${slug}/catalog`).then((r) => r.data);
+
+export const setupStorefront = (data: {
+  slug: string;
+  profileImageUrl?: string;
+  bannerImageUrl?: string;
+  location?: { city: string; state: string; country: string };
+  socialLinks?: { instagram?: string; twitter?: string; website?: string };
+  businessHours?: string;
+  isPublicStorefront?: boolean;
+}) => http.post<ApiResponse>('/storefronts/setup', data).then((r) => r.data);
+
+export const updateStorefront = (data: {
+  shopName?: string;
+  category?: string;
+  description?: string;
+  slug?: string;
+  location?: { city?: string; state?: string; country?: string };
+  socialLinks?: { instagram?: string; twitter?: string; website?: string };
+  businessHours?: string;
+  isPublicStorefront?: boolean;
+}) => http.put<ApiResponse>('/storefronts/update', data).then((r) => r.data);
+
+export const getFeaturedStorefronts = () =>
+  http.get<ApiResponse>('/storefronts/featured').then((r) => r.data);
+
+export const submitStorefrontReview = (slug: string, data: {
+  invoiceId: string;
+  rating: number;
+  body?: string;
+  productId?: string;
+}) => http.post<ApiResponse>(`/storefronts/${slug}/review`, data).then((r) => r.data);
+
+// ─── Catalog ──────────────────────────────────────────────────────────────────
+
+export const createProduct = (data: {
+  title: string;
+  description: string;
+  priceLovelace: number;
+  priceINR?: number;
+  category: 'digital' | 'physical' | 'service';
+  isDigital: boolean;
+  ipfsHash?: string;
+  inventory?: number;
+  images?: string[];
+  tags?: string[];
+}) => http.post<ApiResponse>('/catalog/products', data).then((r) => r.data);
+
+export const updateProduct = (productId: string, data: {
+  title?: string;
+  description?: string;
+  priceLovelace?: number;
+  priceINR?: number;
+  category?: 'digital' | 'physical' | 'service';
+  isDigital?: boolean;
+  ipfsHash?: string;
+  inventory?: number;
+  images?: string[];
+  tags?: string[];
+  isActive?: boolean;
+}) => http.put<ApiResponse>(`/catalog/products/${productId}`, data).then((r) => r.data);
+
+export const deleteProduct = (productId: string) =>
+  http.delete<ApiResponse>(`/catalog/products/${productId}`).then((r) => r.data);
+
+export const getProduct = (productId: string) =>
+  http.get<ApiResponse>(`/catalog/products/${productId}`).then((r) => r.data);
+
+export const buyProduct = (productId: string, data: { customerAddress: string }) =>
+  http.post<ApiResponse>(`/catalog/products/${productId}/buy`, data).then((r) => r.data);
+
+// ─── Developer Keys ───────────────────────────────────────────────────────────
+
+export const createApiKey = (data: { name: string; permissions: string[] }) =>
+  http.post<ApiResponse<{ apiKey: string }>>('/developer/keys/create', data).then((r) => r.data);
+
+export const getApiKeys = () =>
+  http.get<ApiResponse<any[]>>('/developer/keys').then((r) => r.data);
+
+export const revokeApiKey = (keyId: string) =>
+  http.delete<ApiResponse>(`/developer/keys/${keyId}`).then((r) => r.data);
+
+// ─── Webhooks ────────────────────────────────────────────────────────────────
+
+export const registerWebhook = (data: { url: string; events: string[] }) =>
+  http.post<ApiResponse>('/webhooks/register', data).then((r) => r.data);
+
+export const getWebhooks = () =>
+  http.get<ApiResponse<any[]>>('/webhooks').then((r) => r.data);
+
+export const deleteWebhook = (id: string) =>
+  http.delete<ApiResponse>(`/webhooks/${id}`).then((r) => r.data);
+
+export const testWebhook = (id: string) =>
+  http.post<ApiResponse>(`/webhooks/${id}/test`).then((r) => r.data);
+
+export const getWebhookDeliveries = (id: string) =>
+  http.get<ApiResponse<any[]>>(`/webhooks/${id}/deliveries`).then((r) => r.data);
+
+// ─── Reputation ──────────────────────────────────────────────────────────────
+
+export const getReputationByWallet = (walletAddress: string) =>
+  http.get<ApiResponse>(`/reputation/${walletAddress}`).then((r) => r.data);
+
+export const getReputationBySlug = (slug: string) =>
+  http.get<ApiResponse>(`/reputation/merchant/${slug}`).then((r) => r.data);
+
+export const refreshReputation = (merchantId: string) =>
+  http.post<ApiResponse>(`/reputation/refresh/${merchantId}`).then((r) => r.data);
+
+export const getEscrowExplanation = (invoiceId: string) =>
+  http.get<ApiResponse>(`/ai/escrow/${invoiceId}/explain`).then((r) => r.data);
+
+// ─── Analytics ───────────────────────────────────────────────────────────────
+
+export const getAnalyticsSummary = (params?: { windowDays?: number }) =>
+  http.get<ApiResponse>('/analytics/merchant/summary', { params }).then((r) => r.data);
+
+export const getAnalyticsRevenue = (params?: { windowDays?: number }) =>
+  http.get<ApiResponse>('/analytics/merchant/revenue', { params }).then((r) => r.data);
+
+export const getAnalyticsInsights = (params?: { windowDays?: number }) =>
+  http.get<ApiResponse>('/analytics/merchant/insights', { params }).then((r) => r.data);
+
+export const suggestPricing = (data: { description: string; category: string }) =>
+  http.post<ApiResponse>('/analytics/pricing/suggest', data).then((r) => r.data);
+
+export const generateInvoiceDraft = (data: { description: string; category: string }) =>
+  http.post<ApiResponse>('/analytics/invoice/draft', data).then((r) => r.data);
+
+// ─── Marketplace ──────────────────────────────────────────────────────────────
+
+export const getMarketplaceFeed = (params?: { city?: string; category?: string; page?: number; limit?: number }) =>
+  http.get<ApiResponse>('/marketplace/feed', { params }).then((r) => r.data);
+
+export const getMarketplaceTrending = () =>
+  http.get<ApiResponse>('/marketplace/trending').then((r) => r.data);
+
+export const searchMarketplace = (params: { q: string }) =>
+  http.get<ApiResponse>('/marketplace/search', { params }).then((r) => r.data);
+
+export const getMarketplaceCategories = () =>
+  http.get<ApiResponse>('/marketplace/categories').then((r) => r.data);
+
+export const getMarketplaceNearby = (params: { city: string }) =>
+  http.get<ApiResponse>('/marketplace/nearby', { params }).then((r) => r.data);

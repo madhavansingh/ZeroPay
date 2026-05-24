@@ -11,8 +11,9 @@
   ],
   "scripts": {
     "dev:backend": "npm run dev --workspace=backend",
+    "dev:worker": "npm run dev:worker --workspace=backend",
     "dev:web": "npm run dev --workspace=apps/web",
-    "dev": "concurrently --names \"BACKEND,WEB\" --prefix-colors \"cyan,magenta\" \"npm run dev:backend\" \"npm run dev:web\"",
+    "dev": "concurrently --names \"BACKEND,WORKER,WEB\" --prefix-colors \"cyan,blue,magenta\" \"npm run dev:backend\" \"npm run dev:worker\" \"npm run dev:web\"",
     "build:backend": "npm run build --workspace=backend",
     "build:web": "npm run build --workspace=apps/web",
     "build": "npm run build:backend && npm run build:web",

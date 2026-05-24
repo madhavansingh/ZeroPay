@@ -26,12 +26,12 @@ export async function processDigitalDelivery(invoiceId: string): Promise<void> {
 
     const product = await Product.findById(invoice.productId);
     if (!product) {
-      logger.warn('[delivery] Product not found for invoice', { ...ctx, productId: invoice.productId });
+      logger.warn('[delivery] Product not found for invoice', { ...ctx, productId: invoice.productId.toString() });
       return;
     }
 
     if (!product.isDigital || !product.ipfsHash) {
-      logger.debug('[delivery] Product is not digital or missing IPFS hash — skipping', { ...ctx, productId: product._id });
+      logger.debug('[delivery] Product is not digital or missing IPFS hash — skipping', { ...ctx, productId: product._id.toString() });
       return;
     }
 
@@ -83,7 +83,7 @@ export async function processDigitalDelivery(invoiceId: string): Promise<void> {
             read: false,
           });
 
-          logger.info('[delivery] RTDB notification updated', { ...ctx, customerId: customer._id });
+          logger.info('[delivery] RTDB notification updated', { ...ctx, customerId: customer._id.toString() });
         } catch (e: any) {
           logger.warn('[delivery] RTDB notification write failed — non-fatal', { ...ctx, detail: e.message });
         }
@@ -103,7 +103,7 @@ export async function processDigitalDelivery(invoiceId: string): Promise<void> {
 
     logger.info('[delivery] Digital delivery processed successfully', {
       ...ctx,
-      deliveryId: delivery._id,
+      deliveryId: delivery._id.toString(),
       productId: product.productId,
     });
   } catch (err: unknown) {

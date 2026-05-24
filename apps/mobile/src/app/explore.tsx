@@ -1,23 +1,112 @@
+import React, { useState, useEffect } from 'react';
 import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
-import { Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+  ActivityIndicator,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ExternalLink } from '@/components/external-link';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Collapsible } from '@/components/ui/collapsible';
-import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-export default function TabTwoScreen() {
+const CATEGORIES = ['all', 'food', 'retail', 'services', 'vendor', 'digital'];
+
+export default function ExploreScreen() {
   const safeAreaInsets = useSafeAreaInsets();
   const insets = {
     ...safeAreaInsets,
     bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
   };
   const theme = useTheme();
+
+  const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [merchants, setMerchants] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch feed with mock fallback if backend is unreachable
+  useEffect(() => {
+    const fetchFeed = async () => {
+      setLoading(true);
+      try {
+        const catFilter = selectedCategory !== 'all' ? `?category=${selectedCategory}` : '';
+        const res = await fetch(`http://localhost:5050/api/v1/marketplace/feed${catFilter}`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        const payload = await res.json();
+        if (payload.success && payload.data?.merchants) {
+          setMerchants(payload.data.merchants);
+        } else {
+          throw new Error('Fallback to mock');
+        }
+      } catch (err) {
+        // High fidelity mock data for offline/simulator experience
+        const mockMerchants = [
+          {
+            merchantId: 'MC-2940',
+            shopName: 'Arjun Web Dev',
+            slug: 'arjun-web-dev',
+            category: 'services',
+            description: 'Premium Smart Contract development & Full-stack React auditing.',
+            profileImageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+            location: { city: 'Mumbai', country: 'India' },
+            reputationScore: 98,
+            reliabilityTier: 'platinum',
+            verifiedMerchantBadge: true,
+          },
+          {
+            merchantId: 'MC-8302',
+            shopName: 'Mumbai Spice Kitchen',
+            slug: 'mumbai-spices',
+            category: 'food',
+            description: 'Fresh organic masalas and authentic gourmet street food caterer.',
+            profileImageUrl: 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=150&q=80',
+            location: { city: 'Mumbai', country: 'India' },
+            reputationScore: 94,
+            reliabilityTier: 'gold',
+            verifiedMerchantBadge: true,
+          },
+          {
+            merchantId: 'MC-1039',
+            shopName: 'Neo Vintage Retail',
+            slug: 'neo-vintage',
+            category: 'retail',
+            description: 'Curated 90s streetwear, accessories, and recycled custom fits.',
+            profileImageUrl: 'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=150&q=80',
+            location: { city: 'Delhi', country: 'India' },
+            reputationScore: 88,
+            reliabilityTier: 'silver',
+            verifiedMerchantBadge: false,
+          },
+        ];
+
+        // Apply category filter on mock
+        const filtered =
+          selectedCategory === 'all'
+            ? mockMerchants
+            : mockMerchants.filter((m) => m.category === selectedCategory);
+
+        setMerchants(filtered);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchFeed();
+  }, [selectedCategory]);
+
+  const filteredMerchants = merchants.filter((m) =>
+    m.shopName.toLowerCase().includes(search.toLowerCase()) ||
+    m.description.toLowerCase().includes(search.toLowerCase())
+  );
 
   const contentPlatformStyle = Platform.select({
     android: {
@@ -36,90 +125,128 @@ export default function TabTwoScreen() {
     <ScrollView
       style={[styles.scrollView, { backgroundColor: theme.background }]}
       contentInset={insets}
-      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
+      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}
+    >
       <ThemedView style={styles.container}>
-        <ThemedView style={styles.titleContainer}>
-          <ThemedText type="subtitle">Explore</ThemedText>
-          <ThemedText style={styles.centerText} themeColor="textSecondary">
-            This starter app includes example{'\n'}code to help you get started.
+        {/* Title */}
+        <ThemedView style={styles.header}>
+          <ThemedText type="title">ZeroPay Marketplace</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            Discover verified merchants accepting Cardano smart escrows
           </ThemedText>
-
-          <ExternalLink href="https://docs.expo.dev" asChild>
-            <Pressable style={({ pressed }) => pressed && styles.pressed}>
-              <ThemedView type="backgroundElement" style={styles.linkButton}>
-                <ThemedText type="link">Expo documentation</ThemedText>
-                <SymbolView
-                  tintColor={theme.text}
-                  name={{ ios: 'arrow.up.right.square', android: 'link', web: 'link' }}
-                  size={12}
-                />
-              </ThemedView>
-            </Pressable>
-          </ExternalLink>
         </ThemedView>
 
-        <ThemedView style={styles.sectionsWrapper}>
-          <Collapsible title="File-based routing">
-            <ThemedText type="small">
-              This app has two screens: <ThemedText type="code">src/app/index.tsx</ThemedText> and{' '}
-              <ThemedText type="code">src/app/explore.tsx</ThemedText>
-            </ThemedText>
-            <ThemedText type="small">
-              The layout file in <ThemedText type="code">src/app/_layout.tsx</ThemedText> sets up
-              the tab navigator.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/router/introduction">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+        {/* Search Input */}
+        <ThemedView type="backgroundElement" style={styles.searchWrapper}>
+          <SymbolView tintColor={theme.iconSecondary} name="magnifyingglass" size={16} />
+          <TextInput
+            placeholder="Search stores or services..."
+            placeholderTextColor={theme.iconSecondary}
+            value={search}
+            onChangeText={setSearch}
+            style={[styles.searchInput, { color: theme.text }]}
+          />
+        </ThemedView>
 
-          <Collapsible title="Android, iOS, and web support">
-            <ThemedView type="backgroundElement" style={styles.collapsibleContent}>
-              <ThemedText type="small">
-                You can open this project on Android, iOS, and the web. To open the web version,
-                press <ThemedText type="smallBold">w</ThemedText> in the terminal running this
-                project.
+        {/* Horizontal Category Scroll */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.categoriesScroll}
+          contentContainerStyle={styles.categoriesContent}
+        >
+          {CATEGORIES.map((cat) => (
+            <Pressable
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              style={[
+                styles.categoryChip,
+                { backgroundColor: theme.backgroundElement },
+                selectedCategory === cat && { borderColor: theme.tint, borderWidth: 1 },
+              ]}
+            >
+              <ThemedText
+                type="smallBold"
+                style={[
+                  styles.categoryText,
+                  selectedCategory === cat && { color: theme.tint },
+                ]}
+              >
+                {cat.toUpperCase()}
               </ThemedText>
-              <Image
-                source={require('@/assets/images/tutorial-web.png')}
-                style={styles.imageTutorial}
-              />
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        {/* Merchants List */}
+        <ThemedView style={styles.listSection}>
+          {loading ? (
+            <ActivityIndicator size="small" color={theme.tint} style={styles.loader} />
+          ) : filteredMerchants.length === 0 ? (
+            <ThemedView style={styles.emptyCard}>
+              <ThemedText type="small" themeColor="textSecondary">
+                No verified merchants match your search filters.
+              </ThemedText>
             </ThemedView>
-          </Collapsible>
+          ) : (
+            filteredMerchants.map((m) => (
+              <ThemedView key={m.merchantId} type="backgroundElement" style={styles.merchantCard}>
+                {/* Logo and title row */}
+                <View style={styles.cardHeader}>
+                  <Image source={{ uri: m.profileImageUrl }} style={styles.avatar} />
+                  <View style={styles.headerDetails}>
+                    <View style={styles.titleRow}>
+                      <ThemedText type="defaultSemiBold" style={{ color: theme.text }}>
+                        {m.shopName}
+                      </ThemedText>
+                      {m.verifiedMerchantBadge && (
+                        <SymbolView tintColor={theme.tint} name="checkmark.seal.fill" size={14} />
+                      )}
+                    </View>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {m.category.toUpperCase()} · {m.location.city}
+                    </ThemedText>
+                  </View>
+                </View>
 
-          <Collapsible title="Images">
-            <ThemedText type="small">
-              For static images, you can use the <ThemedText type="code">@2x</ThemedText> and{' '}
-              <ThemedText type="code">@3x</ThemedText> suffixes to provide files for different
-              screen densities.
-            </ThemedText>
-            <Image source={require('@/assets/images/react-logo.png')} style={styles.imageReact} />
-            <ExternalLink href="https://reactnative.dev/docs/images">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+                {/* Description */}
+                <ThemedText type="small" style={styles.description}>
+                  {m.description}
+                </ThemedText>
 
-          <Collapsible title="Light and dark mode components">
-            <ThemedText type="small">
-              This template has light and dark mode support. The{' '}
-              <ThemedText type="code">useColorScheme()</ThemedText> hook lets you inspect what the
-              user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
-
-          <Collapsible title="Animations">
-            <ThemedText type="small">
-              This template includes an example of an animated component. The{' '}
-              <ThemedText type="code">src/components/ui/collapsible.tsx</ThemedText> component uses
-              the powerful <ThemedText type="code">react-native-reanimated</ThemedText> library to
-              animate opening this hint.
-            </ThemedText>
-          </Collapsible>
+                {/* Footer ratings */}
+                <View style={[styles.cardFooter, { borderTopColor: theme.border }]}>
+                  <View style={styles.footerStat}>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      Reputation
+                    </ThemedText>
+                    <ThemedText type="smallBold" style={{ color: theme.tint }}>
+                      {m.reputationScore}%
+                    </ThemedText>
+                  </View>
+                  <View style={styles.footerStat}>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      Tier
+                    </ThemedText>
+                    <ThemedText
+                      type="smallBold"
+                      style={{
+                        color:
+                          m.reliabilityTier === 'platinum'
+                            ? '#10b981'
+                            : m.reliabilityTier === 'gold'
+                            ? '#f59e0b'
+                            : '#8b90a8',
+                      }}
+                    >
+                      {m.reliabilityTier.toUpperCase()}
+                    </ThemedText>
+                  </View>
+                </View>
+              </ThemedView>
+            ))
+          )}
         </ThemedView>
-        {Platform.OS === 'web' && <WebBadge />}
       </ThemedView>
     </ScrollView>
   );
@@ -136,45 +263,87 @@ const styles = StyleSheet.create({
   container: {
     maxWidth: MaxContentWidth,
     flexGrow: 1,
+    paddingHorizontal: Spacing.four,
+    gap: Spacing.five,
   },
-  titleContainer: {
+  header: {
+    paddingTop: Spacing.six,
+    gap: Spacing.one,
+  },
+  searchWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.three,
+    borderRadius: Spacing.three,
+    gap: Spacing.two,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'System',
+  },
+  categoriesScroll: {
+    marginHorizontal: -Spacing.four,
+  },
+  categoriesContent: {
+    paddingHorizontal: Spacing.four,
+    gap: Spacing.two,
+  },
+  categoryChip: {
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: Spacing.two,
+  },
+  categoryText: {
+    fontSize: 10,
+  },
+  listSection: {
+    gap: Spacing.three,
+  },
+  loader: {
+    marginVertical: Spacing.six,
+  },
+  emptyCard: {
+    padding: Spacing.six,
+    alignItems: 'center',
+  },
+  merchantCard: {
+    padding: Spacing.four,
+    borderRadius: Spacing.three,
+    gap: Spacing.three,
+  },
+  cardHeader: {
+    flexDirection: 'row',
     gap: Spacing.three,
     alignItems: 'center',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.six,
   },
-  centerText: {
-    textAlign: 'center',
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: Spacing.two,
   },
-  pressed: {
-    opacity: 0.7,
+  headerDetails: {
+    flex: 1,
+    gap: Spacing.half,
   },
-  linkButton: {
+  titleRow: {
     flexDirection: 'row',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.five,
-    justifyContent: 'center',
+    alignItems: 'center',
     gap: Spacing.one,
-    alignItems: 'center',
   },
-  sectionsWrapper: {
-    gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
+  description: {
+    lineHeight: 18,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
     paddingTop: Spacing.three,
+    justifyContent: 'space-between',
   },
-  collapsibleContent: {
+  footerStat: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  imageTutorial: {
-    width: '100%',
-    aspectRatio: 296 / 171,
-    borderRadius: Spacing.three,
-    marginTop: Spacing.two,
-  },
-  imageReact: {
-    width: 100,
-    height: 100,
-    alignSelf: 'center',
+    gap: Spacing.two,
   },
 });

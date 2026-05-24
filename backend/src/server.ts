@@ -15,6 +15,7 @@ import { logger } from './config/logger';
 import { connectDatabase } from './config/db';
 import { initFirebase } from './config/firebase-admin';
 import { bullMqRedis } from './config/redis';
+import { initSocketServer } from './config/socketServer';
 
 import authRoutes from './routes/auth.routes';
 import merchantRoutes from './routes/merchant.routes';
@@ -32,22 +33,15 @@ import developerRoutes from './routes/developer.routes';
 import storefrontRoutes from './routes/storefront.routes';
 import catalogRoutes from './routes/catalog.routes';
 import webhookRoutes from './routes/webhook.routes';
+import reputationRoutes from './routes/reputation.routes';
+import analyticsRoutes from './routes/analytics.routes';
+import marketplaceRoutes from './routes/marketplace.routes';
 
 import { initSubscribers } from './events/subscribers';
 import { metricsCollector, createMetricsRouter } from './middleware/metrics.middleware';
 
 import { errorHandler, notFound } from './middleware/errorHandler';
-import { startConfirmationWorker } from './workers/confirmation.worker';
-import { startReceiptWorker } from './workers/receipt.worker';
-import { startNotificationWorker } from './workers/notification.worker';
-import { startExpiryWorker } from './workers/expiry.worker';
-import { startDailyStatsWorker } from './workers/dailyStats.worker';
-import { startReconciliationWorker } from './workers/reconciliation.worker';
-import { startDigitalDeliveryWorker } from './workers/digital-delivery.worker';
-import { startWebhookDeliveryWorker } from './workers/webhook-delivery.worker';
-import { dailyStatsQueue } from './queues/queue.definitions';
 import { createAdminRouter } from './admin/bullboard';
-import type { Worker } from 'bullmq';
 
 // ── Global error handlers (process-level safety net) ─────────────────────────
 process.on('uncaughtException', (err: Error) => {
@@ -139,6 +133,9 @@ async function bootstrap(): Promise<void> {
   app.use('/api/v1/storefronts', storefrontRoutes);
   app.use('/api/v1/catalog', catalogRoutes);
   app.use('/api/v1/webhooks', webhookRoutes);
+  app.use('/api/v1/reputation', reputationRoutes);
+  app.use('/api/v1/analytics', analyticsRoutes);
+  app.use('/api/v1/marketplace', marketplaceRoutes);
 
   // ── Sentry Error Handler (must be before custom error handlers) ───────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -154,40 +151,15 @@ async function bootstrap(): Promise<void> {
     logger.info(`Admin UI: http://localhost:${env.PORT}/admin/queues`);
   });
 
-  // ── BullMQ workers ────────────────────────────────────────────────────────
-  const workers: Worker[] = [];
-  workers.push(startConfirmationWorker());
-  workers.push(startReceiptWorker());
-  workers.push(startNotificationWorker());
-  workers.push(startDailyStatsWorker());
-  workers.push(await startExpiryWorker());
-  workers.push(await startReconciliationWorker());
-  workers.push(startDigitalDeliveryWorker());
-  workers.push(startWebhookDeliveryWorker());
-
-  // Schedule nightly stats sync at 00:05 IST (18:35 UTC)
-  await dailyStatsQueue.add(
-    'nightly-sync',
-    {},
-    {
-      repeat: { pattern: '35 18 * * *' },
-      jobId: 'daily-stats-nightly',
-      removeOnComplete: { count: 7 },
-      removeOnFail: { count: 30 },
-    }
-  );
-
-  logger.info('All BullMQ workers started');
+  // ── Init Socket Server ─────────────────────────────────────────────────────
+  initSocketServer(server, env.UPSTASH_REDIS_TLS_URL);
 
   // ── Graceful shutdown ─────────────────────────────────────────────────────
   const shutdown = async (signal: string): Promise<void> => {
     logger.info(`Graceful shutdown initiated`, { signal });
 
     server.close(async () => {
-      logger.info('HTTP server closed — draining workers...');
-      // Close all BullMQ workers gracefully
-      await Promise.allSettled(workers.map((w) => w.close()));
-      logger.info('Workers drained');
+      logger.info('HTTP server closed — disconnecting dependencies...');
 
       await bullMqRedis.quit();
       logger.info('Redis connection closed');

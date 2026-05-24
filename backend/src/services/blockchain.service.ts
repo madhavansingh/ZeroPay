@@ -116,30 +116,37 @@ async function getTxInfoKoios(txHash: string): Promise<TxInfo | null> {
 
 // ─── Public API: auto-fallback ────────────────────────────────────────────────
 
+import { circuitRegistry } from '../config/circuitBreaker';
+
 export async function getTxInfo(txHash: string): Promise<TxInfo | null> {
-  try {
-    return await getTxInfoBlockfrost(txHash);
-  } catch (blockfrostErr) {
-    console.warn('[blockchain] Blockfrost failed, falling back to Koios:', blockfrostErr);
-    try {
-      return await getTxInfoKoios(txHash);
-    } catch (koiosErr) {
-      console.error('[blockchain] Koios also failed:', koiosErr);
-      throw new Error('Both Blockfrost and Koios are unavailable');
+  const breaker = circuitRegistry.getOrCreate('blockfrost');
+  return breaker.execute(
+    () => getTxInfoBlockfrost(txHash),
+    async (err) => {
+      console.warn(`[blockchain] Blockfrost breaker tripped or failed, falling back to Koios: ${err.message}`);
+      try {
+        return await getTxInfoKoios(txHash);
+      } catch (koiosErr: any) {
+        console.error(`[blockchain] Koios fallback also failed: ${koiosErr.message}`);
+        throw new Error('Both Blockfrost and Koios are unavailable');
+      }
     }
-  }
+  );
 }
 
 export async function getChainTip(): Promise<TipInfo> {
-  try {
-    return await getChainTipBlockfrost();
-  } catch {
-    const res = await axios.get<Array<{ block_no: number; abs_slot: number }>>(
-      `${KOIOS_BASE}/tip`,
-      { timeout: 10000 }
-    );
-    return { blockHeight: res.data[0]?.block_no ?? 0, slot: res.data[0]?.abs_slot ?? 0 };
-  }
+  const breaker = circuitRegistry.getOrCreate('blockfrost');
+  return breaker.execute(
+    () => getChainTipBlockfrost(),
+    async (err) => {
+      console.warn(`[blockchain] Blockfrost breaker tripped or failed for tip, falling back to Koios: ${err.message}`);
+      const res = await axios.get<Array<{ block_no: number; abs_slot: number }>>(
+        `${KOIOS_BASE}/tip`,
+        { timeout: 10000 }
+      );
+      return { blockHeight: res.data[0]?.block_no ?? 0, slot: res.data[0]?.abs_slot ?? 0 };
+    }
+  );
 }
 
 /**

@@ -1,10 +1,12 @@
 import { domainEventBus, DomainEvents } from './eventBus';
 import { logProtocolActivity } from '../services/audit.service';
 import { updateMerchantReputation } from '../services/reputation.service';
-import { enqueueNotification, enqueueDigitalDelivery, NotificationJobData } from '../queues/queue.definitions';
+import { enqueueNotification, enqueueDigitalDelivery, enqueueDisputeResolution, NotificationJobData } from '../queues/queue.definitions';
 import { Invoice } from '../models/Invoice';
 import { Merchant } from '../models/Merchant';
 import { Product } from '../models/Product';
+import { triggerWebhooks } from '../services/webhook.service';
+import { broadcastToRoom } from '../config/socketServer';
 import { logger } from '../config/logger';
 
 export function initSubscribers(): void {
@@ -38,6 +40,35 @@ export function initSubscribers(): void {
             invoiceId,
             amountPaise: invoice.amountPaise,
             shopName: merchant.shopName,
+          });
+
+          // Trigger webhooks (fire-and-forget)
+          triggerWebhooks(merchant._id.toString(), 'escrow.locked', {
+            invoiceId,
+            txHash,
+            amountLovelace,
+            customerAddress,
+            status: invoice.status,
+            escrowState: 'Locked',
+          }).catch((err) => logger.warn('Failed to trigger escrow.locked webhook', { detail: err.message }));
+
+          triggerWebhooks(merchant._id.toString(), 'invoice.paid', {
+            invoiceId,
+            txHash,
+            amountLovelace,
+            customerAddress,
+            status: invoice.status,
+          }).catch((err) => logger.warn('Failed to trigger invoice.paid webhook', { detail: err.message }));
+
+          // Broadcast live updates via Socket.IO
+          broadcastToRoom(`merchant:${merchant._id.toString()}`, 'payment:received', {
+            invoiceId,
+            amountPaise: invoice.amountPaise,
+            status: invoice.status,
+          });
+          broadcastToRoom(`invoice:${invoiceId}`, 'escrow:stateChanged', {
+            invoiceId,
+            newState: 'Locked',
           });
         }
       }
@@ -78,6 +109,38 @@ export function initSubscribers(): void {
             amountPaise: invoice.amountPaise,
             shopName: merchant.shopName,
           });
+
+          // Trigger webhooks (fire-and-forget)
+          triggerWebhooks(merchant._id.toString(), 'milestone.released', {
+            invoiceId,
+            txHash,
+            milestoneIndex,
+            payoutLovelace,
+            isFinal,
+            customerAddress,
+          }).catch((err) => logger.warn('Failed to trigger milestone.released webhook', { detail: err.message }));
+
+          if (isFinal) {
+            triggerWebhooks(merchant._id.toString(), 'escrow.released', {
+              invoiceId,
+              txHash,
+              payoutLovelace,
+              customerAddress,
+            }).catch((err) => logger.warn('Failed to trigger escrow.released webhook', { detail: err.message }));
+          }
+
+          // Broadcast live updates via Socket.IO
+          const newState = isFinal ? 'Released' : 'PartiallyReleased';
+          broadcastToRoom(`invoice:${invoiceId}`, 'escrow:stateChanged', {
+            invoiceId,
+            newState,
+            milestoneIndex,
+          });
+          broadcastToRoom(`merchant:${merchant._id.toString()}`, 'escrow:stateChanged', {
+            invoiceId,
+            newState,
+            milestoneIndex,
+          });
         }
         // Check if digital product delivery is needed
         if (isFinal && invoice.productId && invoice.customerId) {
@@ -89,7 +152,7 @@ export function initSubscribers(): void {
               customerId: invoice.customerId.toString(),
               ipfsHash: product.ipfsHash,
             });
-            logger.info('[Subscribers] Enqueued digital delivery for milestone release', { invoiceId, productId: product._id });
+            logger.info('[Subscribers] Enqueued digital delivery for milestone release', { invoiceId, productId: product._id.toString() });
           }
         }
       }
@@ -126,6 +189,30 @@ export function initSubscribers(): void {
             amountPaise: invoice.amountPaise,
             shopName: merchant.shopName,
           });
+
+          // Trigger webhooks (fire-and-forget)
+          triggerWebhooks(merchant._id.toString(), 'escrow.disputed', {
+            invoiceId,
+            txHash,
+            signerAddress,
+          }).catch((err) => logger.warn('Failed to trigger escrow.disputed webhook', { detail: err.message }));
+          // Queue AI dispute resolution job
+          await enqueueDisputeResolution({
+            invoiceId,
+            chatRoomId: invoice.chatRoomId,
+            totalLovelace: invoice.amountLovelace,
+            merchantId: invoice.merchantId.toString(),
+            customerId: invoice.customerId ? invoice.customerId.toString() : '',
+          });
+
+          // Broadcast live updates via Socket.IO
+          broadcastToRoom(`invoice:${invoiceId}`, 'escrow:stateChanged', {
+            invoiceId,
+            newState: 'Disputed',
+          });
+          broadcastToRoom(`merchant:${merchant._id.toString()}`, 'dispute:raised', {
+            invoiceId,
+          });
         }
       }
     } catch (err: any) {
@@ -160,6 +247,24 @@ export function initSubscribers(): void {
             invoiceId,
             amountPaise: invoice.amountPaise,
             shopName: merchant.shopName,
+          });
+
+          // Trigger webhooks (fire-and-forget)
+          triggerWebhooks(merchant._id.toString(), 'invoice.expired', {
+            invoiceId,
+            txHash,
+            payoutLovelace,
+            customerAddress,
+          }).catch((err) => logger.warn('Failed to trigger invoice.expired webhook', { detail: err.message }));
+
+          // Broadcast live updates via Socket.IO
+          broadcastToRoom(`invoice:${invoiceId}`, 'escrow:stateChanged', {
+            invoiceId,
+            newState: 'Refunded',
+          });
+          broadcastToRoom(`merchant:${merchant._id.toString()}`, 'escrow:stateChanged', {
+            invoiceId,
+            newState: 'Refunded',
           });
         }
       }
@@ -200,6 +305,24 @@ export function initSubscribers(): void {
             amountPaise: invoice.amountPaise,
             shopName: merchant.shopName,
           });
+
+          // Trigger webhooks (fire-and-forget)
+          triggerWebhooks(merchant._id.toString(), 'escrow.resolved', {
+            invoiceId,
+            txHash,
+            merchantPayoutLovelace,
+            customerPayoutLovelace,
+          }).catch((err) => logger.warn('Failed to trigger escrow.resolved webhook', { detail: err.message }));
+
+          // Broadcast live updates via Socket.IO
+          broadcastToRoom(`invoice:${invoiceId}`, 'escrow:stateChanged', {
+            invoiceId,
+            newState: 'Resolved',
+          });
+          broadcastToRoom(`merchant:${merchant._id.toString()}`, 'escrow:stateChanged', {
+            invoiceId,
+            newState: 'Resolved',
+          });
         }
         // Check if digital product delivery is needed
         if (invoice.productId && invoice.customerId) {
@@ -211,7 +334,7 @@ export function initSubscribers(): void {
               customerId: invoice.customerId.toString(),
               ipfsHash: product.ipfsHash,
             });
-            logger.info('[Subscribers] Enqueued digital delivery for escrow resolution', { invoiceId, productId: product._id });
+            logger.info('[Subscribers] Enqueued digital delivery for escrow resolution', { invoiceId, productId: product._id.toString() });
           }
         }
       }

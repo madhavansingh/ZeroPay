@@ -22,6 +22,12 @@ const CounterCheckoutPage = lazy(() => import('./pages/merchant/CounterCheckoutP
 const ChatRoomPage = lazy(() => import('./pages/customer/ChatRoomPage'));
 const ScanQRPage = lazy(() => import('./pages/customer/ScanQRPage'));
 const PaymentApprovalPage = lazy(() => import('./pages/customer/PaymentApprovalPage'));
+const StorefrontSetupPage = lazy(() => import('./pages/merchant/StorefrontSetupPage'));
+const CatalogPage = lazy(() => import('./pages/merchant/CatalogPage'));
+const AnalyticsDashboardPage = lazy(() => import('./pages/merchant/AnalyticsDashboardPage'));
+const ApiKeysPage = lazy(() => import('./pages/developer/ApiKeysPage'));
+const WebhooksPage = lazy(() => import('./pages/developer/WebhooksPage'));
+const StorefrontPage = lazy(() => import('./pages/public/StorefrontPage'));
 
 function PageLoader() {
   return (
@@ -106,6 +112,16 @@ export default function App() {
           <Route path="/merchant/dashboard" element={<RequireAuth><RequireOnboardingComplete><RequireMerchant><DashboardPage /></RequireMerchant></RequireOnboardingComplete></RequireAuth>} />
           <Route path="/merchant/checkout" element={<RequireAuth><RequireOnboardingComplete><RequireMerchant><CounterCheckoutPage /></RequireMerchant></RequireOnboardingComplete></RequireAuth>} />
           <Route path="/merchant/qr/:merchantId" element={<RequireAuth><RequireOnboardingComplete><RequireMerchant><QRDisplayPage /></RequireMerchant></RequireOnboardingComplete></RequireAuth>} />
+          <Route path="/merchant/storefront" element={<RequireAuth><RequireOnboardingComplete><RequireMerchant><StorefrontSetupPage /></RequireMerchant></RequireOnboardingComplete></RequireAuth>} />
+          <Route path="/merchant/catalog" element={<RequireAuth><RequireOnboardingComplete><RequireMerchant><CatalogPage /></RequireMerchant></RequireOnboardingComplete></RequireAuth>} />
+          <Route path="/merchant/analytics" element={<RequireAuth><RequireOnboardingComplete><RequireMerchant><AnalyticsDashboardPage /></RequireMerchant></RequireOnboardingComplete></RequireAuth>} />
+
+          {/* Developer */}
+          <Route path="/developer/keys" element={<RequireAuth><RequireOnboardingComplete><RequireMerchant><ApiKeysPage /></RequireMerchant></RequireOnboardingComplete></RequireAuth>} />
+          <Route path="/developer/webhooks" element={<RequireAuth><RequireOnboardingComplete><RequireMerchant><WebhooksPage /></RequireMerchant></RequireOnboardingComplete></RequireAuth>} />
+
+          {/* Public Storefront */}
+          <Route path="/s/:slug" element={<StorefrontPage />} />
 
           {/* Customer */}
           <Route path="/customer/chats" element={<RequireAuth><RequireOnboardingComplete><ChatListPage /></RequireOnboardingComplete></RequireAuth>} />

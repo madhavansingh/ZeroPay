@@ -55,7 +55,7 @@ router.post('/register', requireAuth, requireMerchant, validate(registerWebhookS
       failureCount: 0,
     });
 
-    logger.info('Webhook registered successfully', { webhookId: webhook._id, merchantId: merchant.merchantId });
+    logger.info('Webhook registered successfully', { webhookId: webhook._id.toString(), merchantId: merchant.merchantId });
 
     res.status(201).json({
       success: true,
@@ -114,7 +114,7 @@ router.delete('/:id', requireAuth, requireMerchant, async (req: Request, res: Re
       return;
     }
 
-    logger.info('Webhook subscription deactivated', { webhookId: result._id });
+    logger.info('Webhook subscription deactivated', { webhookId: result._id.toString() });
     res.json({ success: true, message: 'Webhook subscription successfully deactivated' });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to deactivate webhook';

@@ -18,29 +18,39 @@ function isValidCid(cid: string): boolean {
   return CID_V0_REGEX.test(cid) || CID_V1_REGEX.test(cid);
 }
 
+import { circuitRegistry } from '../config/circuitBreaker';
+
 async function pinReceiptToIPFS(receipt: IpfsReceipt): Promise<string> {
-  const response = await axios.post<{ IpfsHash: string }>(
-    'https://api.pinata.cloud/pinning/pinJSONToIPFS',
-    {
-      pinataContent: receipt,
-      pinataMetadata: {
-        name: `zeropay-receipt-${receipt.invoiceId}`,
-        keyvalues: {
-          invoiceId: receipt.invoiceId,
-          txHash: receipt.txHash,
+  const breaker = circuitRegistry.getOrCreate('pinata');
+  return breaker.execute(
+    async () => {
+      const response = await axios.post<{ IpfsHash: string }>(
+        'https://api.pinata.cloud/pinning/pinJSONToIPFS',
+        {
+          pinataContent: receipt,
+          pinataMetadata: {
+            name: `zeropay-receipt-${receipt.invoiceId}`,
+            keyvalues: {
+              invoiceId: receipt.invoiceId,
+              txHash: receipt.txHash,
+            },
+          },
         },
-      },
+        {
+          headers: {
+            Authorization: `Bearer ${env.PINATA_JWT}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 30_000,
+        }
+      );
+      return response.data.IpfsHash;
     },
-    {
-      headers: {
-        Authorization: `Bearer ${env.PINATA_JWT}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 30_000,
+    (err) => {
+      logger.error('[receipt] Pinata circuit breaker triggered or failed', { error: err.message });
+      throw err;
     }
   );
-
-  return response.data.IpfsHash;
 }
 
 export function startReceiptWorker(): Worker {
