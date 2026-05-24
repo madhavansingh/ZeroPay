@@ -133,6 +133,8 @@ invoiceSchema.index({ merchantId: 1, status: 1, createdAt: -1 });
 invoiceSchema.index({ merchantStringId: 1, status: 1, createdAt: -1 });
 invoiceSchema.index({ status: 1, expiresAt: 1 }); // expiry worker
 invoiceSchema.index({ status: 1, createdAt: -1 }); // admin queries
+invoiceSchema.index({ merchantId: 1, createdAt: -1 }); // optimized recent transaction feed
+invoiceSchema.index({ merchantId: 1, status: 1, settledAt: -1 }); // optimized 7-day aggregation window
 
 // Prevent mutation of immutable snapshot fields after creation
 invoiceSchema.pre('save', function (next) {

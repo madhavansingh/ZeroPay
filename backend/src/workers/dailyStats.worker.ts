@@ -65,6 +65,14 @@ export function startDailyStatsWorker(): Worker {
     { connection: bullMqRedis, concurrency: 1 }
   );
 
+  worker.on('active', (job) => {
+    console.log(`[dailyStats] Job ${job.id} is now active`);
+  });
+
+  worker.on('completed', (job) => {
+    console.log(`[dailyStats] Job ${job.id} has completed`);
+  });
+
   worker.on('failed', (_job, err) => {
     console.error('[daily-stats] Job failed:', err.message);
   });

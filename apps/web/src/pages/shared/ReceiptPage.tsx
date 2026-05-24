@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, ExternalLink, CheckCircle } from 'lucide-react';
+import { ArrowLeft, ExternalLink, CheckCircle, Share2 } from 'lucide-react';
 import { getInvoice } from '../../services/api';
 
 export default function ReceiptPage() {
@@ -14,6 +14,24 @@ export default function ReceiptPage() {
   });
 
   const invoice = invoiceRes?.data;
+
+  const handleShare = async () => {
+    if (!invoice || !navigator.share) return;
+    try {
+      await navigator.share({
+        title: 'ZeroPay Receipt',
+        text: [
+          `Payment of ₹${(invoice.amountPaise / 100).toFixed(2)} (${(invoice.amountLovelace / 1_000_000).toFixed(4)} ADA) settled on Cardano.`,
+          `Invoice: ${invoice.invoiceId}`,
+          invoice.txHash ? `TX: ${invoice.txHash}` : '',
+          invoice.receiptCid ? `IPFS: https://gateway.pinata.cloud/ipfs/${invoice.receiptCid}` : '',
+        ].filter(Boolean).join('\n'),
+        url: window.location.href,
+      });
+    } catch (err) {
+      // User cancelled or error — silently ignore
+    }
+  };
 
   if (isLoading) {
     return (
@@ -30,67 +48,64 @@ export default function ReceiptPage() {
       </button>
 
       {invoice ? (
-        <div className="max-w-sm mx-auto animate-fade-in">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 rounded-full bg-status-confirmed/10 flex items-center justify-center mx-auto mb-4">
-              <CheckCircle size={32} className="text-status-confirmed" />
+        <div className="max-w-md mx-auto animate-fade-in">
+          <div className="relative mb-8">
+            <div className="absolute inset-0 bg-status-confirmed blur-3xl opacity-10 rounded-full scale-150 animate-pulse" />
+            <div className="relative text-center">
+              <div className="w-20 h-20 rounded-full bg-status-confirmed/10 flex items-center justify-center mx-auto mb-4 border-4 border-surface shadow-lg">
+                <CheckCircle size={40} className="text-status-confirmed animate-bounce" />
+              </div>
+              <h1 className="text-3xl font-bold">Payment Settled</h1>
+              <p className="text-text-secondary mt-1">Your transaction has been processed</p>
             </div>
-            <h1 className="text-2xl font-bold">Payment Receipt</h1>
-            <p className="text-text-secondary text-sm mt-1">
-              {invoice.status === 'settled' ? 'Payment confirmed & settled' : `Status: ${invoice.status}`}
-            </p>
           </div>
 
-          {/* Receipt card */}
-          <div className="card space-y-4 mb-4">
-            <div className="border-b border-surface-border pb-4 text-center">
-              <p className="text-4xl font-bold">₹{(invoice.amountPaise / 100).toFixed(2)}</p>
-              <p className="font-mono text-text-secondary mt-1">
+          <div className="card space-y-6 mb-6 p-6">
+            <div className="text-center pb-6 border-b border-surface-border">
+              <p className="text-sm text-text-secondary mb-1">Total Paid</p>
+              <p className="text-5xl font-bold text-teal-400">₹{(invoice.amountPaise / 100).toFixed(2)}</p>
+              <p className="font-mono text-text-muted mt-2">
                 {(invoice.amountLovelace / 1_000_000).toFixed(4)} ADA
               </p>
             </div>
 
-            {[
-              { label: 'Invoice ID', value: invoice.invoiceId, mono: true },
-              { label: 'TX Hash', value: invoice.txHash ? `${invoice.txHash.slice(0, 16)}...` : 'Pending', mono: true },
-              { label: 'Rate at payment', value: `₹${invoice.adaInrRate?.toFixed(2)}/ADA` },
-              { label: 'Created', value: new Date(invoice.createdAt).toLocaleString() },
-              { label: 'Settled', value: invoice.settledAt ? new Date(invoice.settledAt).toLocaleString() : 'Pending' },
-            ].map(({ label, value, mono }) => (
-              <div key={label} className="flex justify-between text-sm">
-                <span className="text-text-secondary">{label}</span>
-                <span className={`${mono ? 'font-mono text-xs' : ''} text-text-primary text-right max-w-[55%] break-all`}>
-                  {value}
-                </span>
-              </div>
-            ))}
+            <div className="space-y-4">
+              {[
+                { label: 'Invoice ID', value: invoice.invoiceId },
+                { label: 'Network', value: 'Cardano (Preprod)' },
+                { label: 'Rate', value: `₹${invoice.adaInrRate?.toFixed(2)}/ADA` },
+                { label: 'Timestamp', value: new Date(invoice.createdAt).toLocaleString() },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex justify-between items-center text-sm">
+                  <span className="text-text-secondary">{label}</span>
+                  <span className="font-mono text-text-primary">{value}</span>
+                </div>
+              ))}
+            </div>
 
-            {invoice.receiptCid && (
-              <div className="pt-2 border-t border-surface-border">
+            {invoice.txHash && (
+              <div className="pt-4 border-t border-surface-border space-y-3">
                 <a
-                  href={`https://gateway.pinata.cloud/ipfs/${invoice.receiptCid}`}
+                  href={`https://preprod.cardanoscan.io/transaction/${invoice.txHash}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center gap-2 text-teal-400 text-sm hover:text-teal-300 transition-colors"
+                  className="w-full btn-secondary flex items-center justify-center gap-2 text-sm"
                 >
                   <ExternalLink size={14} />
-                  View on IPFS (Permanent Record)
+                  View on Explorer
                 </a>
               </div>
             )}
           </div>
 
-          {invoice.txHash && (
-            <a
-              href={`https://preprod.cardanoscan.io/transaction/${invoice.txHash}`}
-              target="_blank"
-              rel="noreferrer"
+          {'share' in navigator && (
+            <button
+              id="share-receipt-btn"
+              onClick={handleShare}
               className="btn-secondary w-full flex items-center justify-center gap-2"
             >
-              <ExternalLink size={16} />
-              View on Cardano Explorer
-            </a>
+              <Share2 size={16} /> Share Receipt
+            </button>
           )}
         </div>
       ) : (

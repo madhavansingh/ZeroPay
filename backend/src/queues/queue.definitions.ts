@@ -43,6 +43,10 @@ export const expiryQueue = new Queue('invoice-expiry', {
   ...defaultQueueOptions,
 });
 
+export const dailyStatsQueue = new Queue('daily-stats', {
+  ...defaultQueueOptions,
+});
+
 // ─── Job payload types ────────────────────────────────────────────────────────
 
 export interface TxConfirmationJobData {

@@ -34,26 +34,35 @@ export default function RevenueChart({ data }: RevenueChartProps) {
         </div>
       </div>
 
-      {/* Bar chart */}
+      {/* Bar chart — staggered grow-up animation */}
       <div className="flex items-end gap-1.5 h-20 mt-4">
-        {days.map((day) => {
+        {days.map((day, idx) => {
           const heightPct = maxLovelace > 0 ? (day.lovelace / maxLovelace) * 100 : 0;
           const hasData = day.lovelace > 0;
 
           return (
             <div key={day.date} className="flex-1 flex flex-col items-center gap-1">
-              <div className="w-full flex items-end justify-center" style={{ height: '64px' }}>
+              <div
+                className="w-full flex items-end justify-center overflow-hidden rounded-t-sm"
+                style={{ height: '64px' }}
+              >
                 <div
-                  className={`w-full rounded-t-sm transition-all duration-500 ${
+                  className={`w-full rounded-t-sm ${
                     hasData
-                      ? 'bg-gradient-to-t from-teal-600 to-teal-400'
+                      ? 'bg-gradient-to-t from-teal-700 to-teal-400 animate-grow-up'
                       : 'bg-surface-elevated'
                   }`}
                   style={{
                     height: hasData ? `${Math.max(heightPct, 8)}%` : '4px',
                     minHeight: hasData ? '6px' : '4px',
+                    animationDelay: hasData ? `${idx * 60}ms` : '0ms',
+                    animationFillMode: 'both',
                   }}
-                  title={hasData ? `${(day.lovelace / 1_000_000).toFixed(2)} ADA · ${day.count} orders` : 'No revenue'}
+                  title={
+                    hasData
+                      ? `${(day.lovelace / 1_000_000).toFixed(2)} ADA · ${day.count} order${day.count !== 1 ? 's' : ''}`
+                      : 'No revenue'
+                  }
                 />
               </div>
               <span className="text-text-muted text-[9px]">{shortDay(day.date)}</span>

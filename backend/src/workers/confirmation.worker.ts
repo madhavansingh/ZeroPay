@@ -151,6 +151,14 @@ export function startConfirmationWorker(): Worker {
     }
   );
 
+  worker.on('active', (job) => {
+    console.log(`[confirmation] Job ${job.id} is now active`);
+  });
+
+  worker.on('completed', (job) => {
+    console.log(`[confirmation] Job ${job.id} has completed`);
+  });
+
   worker.on('failed', (job, err) => {
     if (job && !err.message.includes('not found on chain') && !err.message.includes('confirmations')) {
       console.error(`[confirmation] Job ${job.id} failed permanently:`, err.message);

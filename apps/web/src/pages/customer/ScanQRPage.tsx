@@ -1,10 +1,12 @@
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import QrScanner from 'qr-scanner';
+import { createChatRoom } from '../../services/api';
 
 export default function ScanQRPage() {
   const [manualInput, setManualInput] = useState('');
   const [error, setError] = useState('');
+  const [isSettingUpChat, setIsSettingUpChat] = useState(false);
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const qrScannerRef = useRef<QrScanner | null>(null);
@@ -46,6 +48,42 @@ export default function ScanQRPage() {
     // Stop scanning once decoded
     qrScannerRef.current?.stop();
 
+    const beginsWithInv = trimmed.startsWith('INV-') || trimmed.includes('/customer/pay/INV-');
+    const isReceipt = trimmed.includes('/receipt/');
+
+    if (!beginsWithInv && !isReceipt) {
+      // It is a static merchant QR code scan!
+      let merchantStringId = trimmed;
+      if (trimmed.includes('/customer/pay/')) {
+        const parts = trimmed.split('/customer/pay/');
+        merchantStringId = parts[parts.length - 1].split('?')[0].split('#')[0];
+      } else if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        try {
+          const url = new URL(trimmed);
+          const pathParts = url.pathname.split('/');
+          merchantStringId = pathParts[pathParts.length - 1];
+        } catch {
+          // fallback
+        }
+      }
+
+      setIsSettingUpChat(true);
+      createChatRoom({ merchantStringId })
+        .then((res) => {
+          if (res.success && res.data?.roomId) {
+            navigate(`/customer/chats/${res.data.roomId}`, { replace: true });
+          } else {
+            setError(res.error ?? 'Failed to setup checkout chat room');
+            setIsSettingUpChat(false);
+          }
+        })
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : 'Failed to setup checkout chat room');
+          setIsSettingUpChat(false);
+        });
+      return;
+    }
+
     if (trimmed.includes('/customer/pay/') || trimmed.includes('/receipt/')) {
       try {
         const url = new URL(trimmed);
@@ -72,6 +110,13 @@ export default function ScanQRPage() {
 
   return (
     <div className="min-h-screen bg-surface flex flex-col">
+      {isSettingUpChat && (
+        <div className="fixed inset-0 z-50 bg-surface/85 backdrop-blur-md flex flex-col items-center justify-center animate-fade-in">
+          <div className="w-16 h-16 border-4 border-teal-600 border-t-transparent rounded-full animate-spin mb-4 shadow-[0_0_20px_rgba(20,169,154,0.2)]" />
+          <h2 className="text-xl font-bold text-text-primary mb-1">Setting up secure chat...</h2>
+          <p className="text-sm text-text-secondary">Connecting with merchant</p>
+        </div>
+      )}
       {/* Camera viewfinder */}
       <div className="relative flex-1 bg-black overflow-hidden">
         <video

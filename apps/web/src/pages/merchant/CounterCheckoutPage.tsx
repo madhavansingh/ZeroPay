@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Loader2, CheckCircle, Clock } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { createInvoice, getAdaInrRate } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
 import { useQuery } from '@tanstack/react-query';
+import { database } from '../../services/firebase';
+import { ref, onValue } from 'firebase/database';
 
 const QUICK_AMOUNTS = [50, 100, 200, 500, 1000];
 
@@ -21,6 +23,7 @@ export default function CounterCheckoutPage() {
     expiresAt: string;
   } | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [invoiceStatus, setInvoiceStatus] = useState<string>('pending');
 
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -42,6 +45,23 @@ export default function CounterCheckoutPage() {
     update();
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
+  }, [invoiceData]);
+
+  useEffect(() => {
+    if (!invoiceData) {
+      setInvoiceStatus('pending');
+      return;
+    }
+
+    const statusRef = ref(database, `/invoices/${invoiceData.invoiceId}`);
+    const unsubscribe = onValue(statusRef, (snap) => {
+      const status = snap.val();
+      if (status) {
+        setInvoiceStatus(status);
+      }
+    });
+
+    return () => unsubscribe();
   }, [invoiceData]);
 
   const amountInr = parseFloat(amountStr) || 0;
@@ -74,6 +94,63 @@ export default function CounterCheckoutPage() {
       setLoading(false);
     }
   };
+
+  if (invoiceData && invoiceStatus === 'settled') {
+    return (
+      <div className="min-h-screen bg-surface flex flex-col items-center justify-center px-6 py-10 animate-fade-in text-center">
+        <div className="w-full max-w-sm">
+          {/* Stunning glowing tick mark container */}
+          <div className="w-24 h-24 rounded-full bg-status-confirmed/10 border-2 border-status-confirmed/30 flex items-center justify-center mx-auto mb-6 shadow-[0_0_50px_-12px_rgba(16,185,129,0.3)] animate-bounce">
+            <svg className="w-12 h-12 text-status-confirmed" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" className="checkmark-path" />
+            </svg>
+          </div>
+
+          <h1 className="text-3xl font-extrabold tracking-tight mb-2">Payment Settled!</h1>
+          <p className="text-text-secondary text-sm mb-8">
+            Your transaction has been validated on-chain and receipt generated.
+          </p>
+
+          <div className="card space-y-4 mb-8 bg-surface-card border border-surface-border text-left">
+            <div className="border-b border-surface-border pb-4 text-center">
+              <p className="text-text-secondary text-xs uppercase tracking-wider mb-1">Amount Settled</p>
+              <p className="text-4xl font-extrabold text-teal-400">₹{(invoiceData.amountPaise / 100).toFixed(2)}</p>
+              <p className="font-mono text-text-secondary text-sm mt-1">
+                {(invoiceData.amountLovelace / 1_000_000).toFixed(4)} ADA
+              </p>
+            </div>
+
+            <div className="flex justify-between text-sm">
+              <span className="text-text-secondary">Invoice ID</span>
+              <span className="font-mono text-xs text-text-primary">{invoiceData.invoiceId}</span>
+            </div>
+            
+            <div className="flex justify-between text-sm">
+              <span className="text-text-secondary">Exchange Rate</span>
+              <span className="text-text-primary">₹{invoiceData.adaInrRate.toFixed(2)} / ADA</span>
+            </div>
+
+            <div className="flex justify-between text-sm">
+              <span className="text-text-secondary">Network</span>
+              <span className="text-text-primary font-medium">Cardano Preprod</span>
+            </div>
+          </div>
+
+          <button
+            id="checkout-complete-btn"
+            onClick={() => {
+              setInvoiceData(null);
+              setAmountStr('');
+              setDescription('');
+            }}
+            className="btn-primary w-full shadow-lg shadow-teal-600/20 active:scale-[0.98] transition-transform"
+          >
+            Complete Checkout
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (invoiceData) {
     const deepLink = `${window.location.origin}/customer/pay/${invoiceData.invoiceId}`;
@@ -116,6 +193,34 @@ export default function CounterCheckoutPage() {
               )}
             </p>
           </div>
+
+          {/* Live status pill */}
+          {invoiceStatus !== 'pending' && invoiceStatus !== 'settled' && (
+            <div
+              className={`flex items-center gap-2 justify-center px-4 py-2 rounded-2xl text-sm font-medium mb-4 animate-fade-in ${
+                invoiceStatus === 'submitted'
+                  ? 'bg-status-submitted/10 text-status-submitted border border-status-submitted/20'
+                  : invoiceStatus === 'confirming'
+                  ? 'bg-status-confirming/10 text-status-confirming border border-status-confirming/20'
+                  : 'bg-status-confirmed/10 text-status-confirmed border border-status-confirmed/20'
+              }`}
+            >
+              {invoiceStatus === 'submitted' ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : invoiceStatus === 'confirming' ? (
+                <Clock size={14} className="animate-pulse" />
+              ) : (
+                <CheckCircle size={14} />
+              )}
+              <span>
+                {invoiceStatus === 'submitted'
+                  ? 'Payment broadcast — awaiting chain'
+                  : invoiceStatus === 'confirming'
+                  ? 'Confirming on Cardano...'
+                  : `Status: ${invoiceStatus}`}
+              </span>
+            </div>
+          )}
 
           <p className="text-text-muted text-xs text-center">
             {isExpired ? 'Please go back and generate a new checkout QR code.' : 'Customer scans the QR code with their ZeroPay app to pay'}

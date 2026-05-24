@@ -66,6 +66,73 @@ export default function DashboardPage() {
   const settledCount = (stats.settled ?? 0) as number;
   const pendingCount = ((stats.pending ?? 0) + (stats.confirming ?? 0)) as number;
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-surface pb-28 animate-pulse">
+        {/* Header Skeleton */}
+        <div className="px-5 pt-14 pb-5 flex justify-between items-center">
+          <div>
+            <div className="h-4 w-28 bg-surface-card rounded-lg mb-2" />
+            <div className="h-8 w-48 bg-surface-card rounded-xl" />
+          </div>
+          <div className="h-10 w-10 bg-surface-card rounded-xl" />
+        </div>
+
+        {/* Stats Grid Skeleton */}
+        <div className="px-5 grid grid-cols-2 gap-3 mb-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="card space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="h-4 w-4 bg-surface-elevated rounded-full" />
+                <div className="h-3 w-16 bg-surface-elevated rounded-lg" />
+              </div>
+              <div className="h-6 w-24 bg-surface-elevated rounded-lg" />
+              <div className="h-3 w-8 bg-surface-elevated rounded-lg" />
+            </div>
+          ))}
+        </div>
+
+        {/* Chart Skeleton */}
+        <div className="px-5 mb-4">
+          <div className="card h-40 flex flex-col justify-between">
+            <div className="flex justify-between items-center">
+              <div className="h-4 w-24 bg-surface-elevated rounded-lg" />
+              <div className="space-y-1">
+                <div className="h-4 w-16 bg-teal-600/20 rounded-lg ml-auto" />
+                <div className="h-3 w-12 bg-surface-elevated rounded-lg ml-auto" />
+              </div>
+            </div>
+            {/* Chart bars placeholders */}
+            <div className="flex items-end gap-1.5 h-20 mt-4">
+              {Array.from({ length: 7 }).map((_, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
+                  <div className="w-full bg-surface-elevated rounded-t-sm" style={{ height: `${20 + i * 10}%` }} />
+                  <div className="h-2 w-6 bg-surface-elevated rounded-md" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Recent Transactions List Skeleton */}
+        <div className="px-5 mt-2">
+          <div className="h-4 w-16 bg-surface-card rounded-lg mb-3" />
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="card flex items-center justify-between h-14">
+                <div className="space-y-1.5">
+                  <div className="h-4 w-20 bg-surface-elevated rounded-lg" />
+                  <div className="h-3 w-28 bg-surface-elevated rounded-lg" />
+                </div>
+                <div className="h-6 w-16 bg-surface-elevated rounded-full" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-surface pb-28">
       {/* Header */}

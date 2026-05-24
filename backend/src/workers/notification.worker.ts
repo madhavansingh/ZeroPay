@@ -58,6 +58,14 @@ export function startNotificationWorker(): Worker {
     }
   );
 
+  worker.on('active', (job) => {
+    console.log(`[notification] Job ${job.id} is now active`);
+  });
+
+  worker.on('completed', (job) => {
+    console.log(`[notification] Job ${job.id} has completed`);
+  });
+
   worker.on('failed', (job, err) => {
     console.error(`[notification] Job ${job?.id} failed:`, err.message);
   });

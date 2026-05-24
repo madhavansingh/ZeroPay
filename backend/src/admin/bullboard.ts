@@ -6,6 +6,7 @@ import {
   receiptQueue,
   notificationQueue,
   expiryQueue,
+  dailyStatsQueue,
 } from '../queues/queue.definitions';
 
 export function createAdminRouter() {
@@ -18,6 +19,7 @@ export function createAdminRouter() {
       new BullMQAdapter(receiptQueue),
       new BullMQAdapter(notificationQueue),
       new BullMQAdapter(expiryQueue),
+      new BullMQAdapter(dailyStatsQueue),
     ],
     serverAdapter,
   });

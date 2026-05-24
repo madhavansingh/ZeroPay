@@ -117,6 +117,14 @@ export function startReceiptWorker(): Worker {
     }
   );
 
+  worker.on('active', (job) => {
+    console.log(`[receipt] Job ${job.id} is now active`);
+  });
+
+  worker.on('completed', (job) => {
+    console.log(`[receipt] Job ${job.id} has completed`);
+  });
+
   worker.on('failed', async (job, err) => {
     if (job) {
       console.error(`[receipt] Job ${job.id} failed:`, err.message);

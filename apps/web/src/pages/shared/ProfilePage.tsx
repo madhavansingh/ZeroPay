@@ -4,7 +4,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useAuth } from '../../hooks/useAuth';
 
 export default function ProfilePage() {
-  const { user } = useAuthStore();
+  const { user, activeRoleView, setActiveRoleView } = useAuthStore();
   const { logout } = useAuth();
   const navigate = useNavigate();
 
@@ -13,12 +13,12 @@ export default function ProfilePage() {
     navigate('/auth');
   };
 
-  const isMerchant = user?.role === 'merchant' || user?.role === 'both';
+  const isMerchant = user?.role === 'merchant' || (user?.role === 'both' && activeRoleView === 'merchant');
 
   return (
     <div className="min-h-screen bg-surface px-5 pt-14 pb-10">
       {/* Avatar */}
-      <div className="flex flex-col items-center mb-10">
+      <div className="flex flex-col items-center mb-8">
         <div className="w-20 h-20 rounded-full bg-teal-600/10 border-2 border-teal-600/30 flex items-center justify-center mb-4">
           <User size={32} className="text-teal-400" />
         </div>
@@ -31,6 +31,42 @@ export default function ProfilePage() {
 
       {/* Menu sections */}
       <div className="space-y-3">
+        {/* Role switcher for both role */}
+        {user?.role === 'both' && (
+          <div className="card">
+            <p className="text-text-muted text-xs uppercase tracking-wider mb-3">Active Mode</p>
+            <div className="flex bg-surface-elevated p-1 rounded-2xl border border-surface-border">
+              <button
+                id="role-switch-merchant-btn"
+                onClick={() => {
+                  setActiveRoleView('merchant');
+                  navigate('/merchant/dashboard');
+                }}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                  activeRoleView === 'merchant'
+                    ? 'bg-teal-600 text-white shadow-lg shadow-teal-600/20'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                Merchant View
+              </button>
+              <button
+                id="role-switch-customer-btn"
+                onClick={() => {
+                  setActiveRoleView('customer');
+                  navigate('/customer/chats');
+                }}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                  activeRoleView === 'customer'
+                    ? 'bg-teal-600 text-white shadow-lg shadow-teal-600/20'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                Customer View
+              </button>
+            </div>
+          </div>
+        )}
         {/* Wallet */}
         <div className="card space-y-1">
           <p className="text-text-muted text-xs uppercase tracking-wider mb-3">Wallet</p>

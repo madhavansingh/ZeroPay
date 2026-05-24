@@ -12,9 +12,9 @@ interface NavItem {
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuthStore();
+  const { user, activeRoleView } = useAuthStore();
 
-  const isMerchant = user?.role === 'merchant' || user?.role === 'both';
+  const isMerchant = user?.role === 'merchant' || (user?.role === 'both' && activeRoleView === 'merchant');
 
   const merchantItems: NavItem[] = [
     {
