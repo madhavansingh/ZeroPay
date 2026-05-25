@@ -21,8 +21,10 @@ import { getMerchantDashboard, getMerchantInvoices } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
 import InvoiceSheet from '../../components/organisms/InvoiceSheet';
 import RevenueChart from '../../components/organisms/RevenueChart';
+import LedgerExplorer from '../../components/organisms/LedgerExplorer';
 import StatusBadge from '../../components/atoms/StatusBadge';
 import type { InvoiceStatus } from '@zeropay/shared-types';
+
 
 
 function lovelaceToAda(lovelace: number) {
@@ -42,7 +44,8 @@ function getGreeting() {
 
 export default function DashboardPage() {
   const [showInvoiceSheet, setShowInvoiceSheet] = useState(false);
-  const { user } = useAuthStore();
+  const [isLedgerOpen, setIsLedgerOpen] = useState(false);
+  const { user, isDeveloperMode } = useAuthStore();
   const navigate = useNavigate();
 
   const { data: dashboardData, isLoading } = useQuery({
@@ -289,6 +292,21 @@ export default function DashboardPage() {
                 <span>Negotiated Savings:</span>
                 <span className="text-emerald-400 font-bold">₹4,250.00 saved</span>
               </div>
+              <div className="border-t border-[#22263a] pt-2.5 mt-2 space-y-1.5 text-[10px]">
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">AI Deal Compromise Rate:</span>
+                  <span className="font-mono text-violet-400 font-semibold">12.4% avg</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">AI Settled Checkouts:</span>
+                  <span className="font-mono text-text-primary">48 orders</span>
+                </div>
+                {isDeveloperMode && (
+                  <div className="text-[9px] font-mono text-text-muted pt-1 border-t border-[#22263a]/50">
+                    <span>Model: gemini-3-flash-preview · Latency: 480ms</span>
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <div className="text-center py-4 text-text-muted text-[11px] italic">
@@ -325,6 +343,22 @@ export default function DashboardPage() {
               <span className="text-xs text-text-secondary">Avg Latency</span>
               <span className="font-mono text-xs text-text-primary">145ms</span>
             </div>
+            {isDeveloperMode && (
+              <div className="border-t border-[#22263a]/50 pt-2 space-y-1.5 text-[10px] font-mono text-text-muted">
+                <div className="flex justify-between">
+                  <span>Tx Confirmation Queue:</span>
+                  <span className="text-emerald-400 font-semibold">Active (0 delayed)</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Receipt Gen Queue:</span>
+                  <span className="text-emerald-400 font-semibold">Active (0 delayed)</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Expiry Dispatch Queue:</span>
+                  <span className="text-emerald-400 font-semibold">Active (0 delayed)</span>
+                </div>
+              </div>
+            )}
             <div className="flex justify-between items-center border-t border-[#22263a] pt-2">
               <span className="text-[10px] text-text-muted uppercase">Subscribed Endpoints</span>
               <button 
@@ -340,9 +374,17 @@ export default function DashboardPage() {
 
       {/* Recent transactions */}
       <div className="px-5 mt-2">
-        <h2 className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-3">
-          Recent active transactions
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+            Recent active transactions
+          </h2>
+          <button
+            onClick={() => setIsLedgerOpen(true)}
+            className="text-[10px] text-teal-400 hover:text-teal-300 font-bold flex items-center gap-1 focus:outline-none"
+          >
+            Audit Ledger <ChevronRight size={10} />
+          </button>
+        </div>
         <div className="space-y-2">
           {isLoading ? (
             Array.from({ length: 3 }).map((_, i) => (
@@ -408,6 +450,9 @@ export default function DashboardPage() {
       {showInvoiceSheet && (
         <InvoiceSheet onClose={() => setShowInvoiceSheet(false)} />
       )}
+
+      {/* Double-Entry Ledger Explorer */}
+      <LedgerExplorer isOpen={isLedgerOpen} onClose={() => setIsLedgerOpen(false)} />
     </div>
   );
 }

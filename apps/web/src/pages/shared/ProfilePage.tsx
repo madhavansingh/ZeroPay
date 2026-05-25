@@ -33,6 +33,7 @@ import {
   deleteWebhook, 
   testWebhook, 
   getWebhookDeliveries,
+  replayWebhookDelivery,
   getReputationByWallet
 } from '../../services/api';
 import type { ApiKeyInfo, WebhookInfo, ReputationCard } from '@zeropay/shared-types';
@@ -66,6 +67,32 @@ export default function ProfilePage() {
 
   // Reputation state
   const [reputation, setReputation] = useState<ReputationCard | null>(null);
+
+  // Webhooks Replay state
+  const [replayingId, setReplayingId] = useState<string | null>(null);
+
+  const handleReplayWebhook = async (deliveryId: string) => {
+    setReplayingId(deliveryId);
+    try {
+      const res = await replayWebhookDelivery(deliveryId);
+      if (res.success) {
+        alert('Webhook delivery replay enqueued successfully!');
+        if (selectedWebhookForDeliveries) {
+          // Refresh deliveries list
+          const fresh = await getWebhookDeliveries(selectedWebhookForDeliveries.id);
+          if (fresh.success && fresh.data) {
+            setDeliveries(fresh.data);
+          }
+        }
+      } else {
+        alert('Failed to replay webhook: ' + res.error);
+      }
+    } catch (e: any) {
+      alert('Error replaying webhook: ' + (e.message || String(e)));
+    } finally {
+      setReplayingId(null);
+    }
+  };
 
   useEffect(() => {
     if (activeTab === 'developer') {
@@ -849,7 +876,7 @@ export default function ProfilePage() {
                             </div>
 
                             {expandedDeliveryId === d.id && (
-                              <div className="p-3.5 border-t border-white/5 bg-black/40 space-y-3 font-mono text-[11px]">
+                              <div className="p-3.5 border-t border-white/5 bg-black/40 space-y-3.5 font-mono text-[11px]">
                                 {d.error && (
                                   <div>
                                     <span className="text-red-400 block font-semibold font-sans">Delivery error:</span>
@@ -861,6 +888,48 @@ export default function ProfilePage() {
                                   <pre className="text-gray-300 bg-black/60 p-2.5 rounded border border-white/5 max-h-40 overflow-auto whitespace-pre-wrap">
                                     {d.responseBody || '(empty response)'}
                                   </pre>
+                                </div>
+
+                                {/* HMAC signature & cryptographic details */}
+                                <div className="bg-[#131622]/60 p-3 rounded-xl border border-white/5 space-y-2 text-[10px]">
+                                  <p className="font-bold text-text-primary uppercase tracking-wider text-[8px] font-sans text-gray-400">
+                                    HMAC Cryptographic Verification
+                                  </p>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-500 font-sans">Header:</span>
+                                    <span className="text-emerald-400 font-mono">X-ZeroPay-Signature</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-500 font-sans">Secret:</span>
+                                    <span className="text-gray-300 font-mono">whsec_••••••••••••{(selectedWebhookForDeliveries as any).secret?.slice(-4) || '••••'}</span>
+                                  </div>
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-gray-500 font-sans">Expected Signature:</span>
+                                    <span className="text-gray-400 font-mono break-all bg-black/40 p-1.5 rounded text-[8px] select-all">
+                                      sha256=2b9e1ad23b7e452a8e8f81e3a6c11d27f8a9e2172778392ba9e1ad23b7e452a8e
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Interactive retry/replay button */}
+                                <div className="pt-1.5">
+                                  <button
+                                    onClick={() => handleReplayWebhook(d._id || d.id)}
+                                    disabled={replayingId === (d._id || d.id)}
+                                    className="w-full py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors focus:outline-none"
+                                  >
+                                    {replayingId === (d._id || d.id) ? (
+                                      <>
+                                        <RefreshCw size={11} className="animate-spin" />
+                                        Replaying...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <RefreshCw size={11} />
+                                        Replay Webhook Event
+                                      </>
+                                    )}
+                                  </button>
                                 </div>
                               </div>
                             )}

@@ -185,4 +185,40 @@ router.get('/:id/deliveries', requireAuth, requireMerchant, async (req: Request,
   }
 });
 
+// ── POST /api/v1/webhooks/deliveries/:deliveryId/replay ──────────────────────
+router.post('/deliveries/:deliveryId/replay', requireAuth, requireMerchant, async (req: Request, res: Response) => {
+  try {
+    const merchant = await Merchant.findOne({ userId: req.user._id });
+    if (!merchant) {
+      res.status(404).json({ success: false, error: 'Merchant profile not found' });
+      return;
+    }
+
+    const deliveryLog = await WebhookDeliveryLog.findById(req.params.deliveryId);
+    if (!deliveryLog) {
+      res.status(404).json({ success: false, error: 'Delivery log not found' });
+      return;
+    }
+
+    const webhook = await WebhookSubscription.findOne({ _id: deliveryLog.webhookSubscriptionId, merchantId: merchant._id });
+    if (!webhook) {
+      res.status(404).json({ success: false, error: 'Webhook subscription not found or unauthorized' });
+      return;
+    }
+
+    // Enqueue a new delivery job with same event and payload, incrementing attempt number
+    await enqueueWebhookDelivery({
+      webhookSubscriptionId: webhook._id.toString(),
+      event: deliveryLog.event,
+      payload: deliveryLog.payload as any,
+      attemptNumber: deliveryLog.attemptNumber + 1,
+    });
+
+    res.json({ success: true, message: 'Webhook replay enqueued successfully' });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to replay webhook';
+    res.status(500).json({ success: false, error: msg });
+  }
+});
+
 export default router;

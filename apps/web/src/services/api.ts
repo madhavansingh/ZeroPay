@@ -288,6 +288,9 @@ export const testWebhook = (id: string) =>
 export const getWebhookDeliveries = (id: string) =>
   http.get<ApiResponse<any[]>>(`/webhooks/${id}/deliveries`).then((r) => r.data);
 
+export const replayWebhookDelivery = (deliveryId: string) =>
+  http.post<ApiResponse>(`/webhooks/deliveries/${deliveryId}/replay`).then((r) => r.data);
+
 // ─── Reputation ──────────────────────────────────────────────────────────────
 
 export const getReputationByWallet = (walletAddress: string) =>

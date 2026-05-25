@@ -102,7 +102,7 @@ type PayStep = 'review' | 'signing' | 'submitted' | 'error';
 export default function PaymentApprovalPage() {
   const { merchantId } = useParams<{ merchantId: string }>();
   const navigate = useNavigate();
-  const { user } = useAuthStore();
+  const { user, isDeveloperMode } = useAuthStore();
   const [step, setStep] = useState<PayStep>('review');
   const [txHash, setTxHash] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -595,42 +595,66 @@ export default function PaymentApprovalPage() {
             )}
           </button>
 
-          {/* Developer-first UX JSON Payload Expander */}
-          <div className="card bg-[#131622]/20 border-[#22263a] p-3.5 space-y-2 mt-6">
-            <button
-              onClick={() => setShowJson(!showJson)}
-              className="text-[10px] font-mono text-text-secondary hover:text-text-primary flex items-center gap-1.5 focus:outline-none"
-            >
-              <FileCode className="w-3.5 h-3.5 text-teal-400" />
-              <span>{showJson ? 'Hide Dev Observability Details' : 'View Raw Tx Metadata & Script Parameters'}</span>
-            </button>
-            
-            {showJson && (
-              <div className="space-y-3 pt-2 border-t border-[#22263a] animate-fade-in">
-                <div>
-                  <p className="text-[8px] font-bold text-text-muted uppercase tracking-wider font-mono">
-                    Plutus Contract Parameters
-                  </p>
-                  <pre className="text-[9px] font-mono text-emerald-400 p-2.5 rounded-lg bg-black/60 border border-[#22263a] overflow-x-auto select-all">
-                    {JSON.stringify({
-                      datum: {
-                        buyerAddress: user?.walletAddress || 'addr_test...',
-                        sellerAddress: invoice.paymentAddress,
-                        milestones: milestones.map(m => ({
-                          weight: m.weight || 100,
-                          released: m.status === 'released'
-                        })),
-                        disputed: invoice.isDisputed || false
-                      },
-                      redeemer: "LockFunds",
-                      scriptHash: "f5979c3ba8120b0d13a90ab",
-                      walletProvider: connectedWallet || 'lace'
-                    }, null, 2)}
-                  </pre>
+          {/* Developer Details Panel */}
+          {isDeveloperMode && (
+            <div className="card bg-[#131622]/20 border-[#22263a] p-3.5 space-y-2 mt-6 animate-fade-in">
+              <button
+                onClick={() => setShowJson(!showJson)}
+                className="text-[10px] font-mono text-text-secondary hover:text-text-primary flex items-center gap-1.5 focus:outline-none w-full justify-between"
+              >
+                <div className="flex items-center gap-1.5">
+                  <FileCode className="w-3.5 h-3.5 text-teal-400" />
+                  <span>Developer Diagnostics Details</span>
                 </div>
-              </div>
-            )}
-          </div>
+                <span className="text-[9px] uppercase tracking-wider text-teal-500 font-bold">
+                  {showJson ? 'COLLAPSE ▲' : 'EXPAND ▼'}
+                </span>
+              </button>
+              
+              {showJson && (
+                <div className="space-y-3 pt-2.5 border-t border-[#22263a] animate-fade-in font-mono text-[9px]">
+                  <div>
+                    <p className="text-[8px] font-bold text-text-muted uppercase tracking-wider mb-1 font-sans">
+                      Plutus Datum Verification Tree
+                    </p>
+                    <pre className="text-[#34D399] bg-black/60 p-2.5 rounded-xl border border-white/5 overflow-x-auto select-all leading-normal">
+                      {JSON.stringify({
+                        datum: {
+                          buyerAddress: user?.walletAddress || 'addr_test...',
+                          sellerAddress: invoice.paymentAddress,
+                          milestones: milestones.map(m => ({
+                            weight: m.weight || 100,
+                            released: m.status === 'released'
+                          })),
+                          disputed: invoice.isDisputed || false
+                        },
+                        redeemer: "LockFunds",
+                        scriptHash: "f5979c3ba8120b0d13a90ab7a6c5689da238b7e28a52e008df8a21f7a810",
+                        walletProvider: connectedWallet || 'lace'
+                      }, null, 2)}
+                    </pre>
+                  </div>
+
+                  <div className="flex justify-between items-center bg-[#0B0D13] p-2 rounded-lg border border-white/5">
+                    <span className="text-gray-400 font-sans">Script Hash:</span>
+                    <span className="font-mono text-white select-all">f5979c3ba8120b0d13a90ab7a6c5689da238b7e28a52e008df8a21f7a810</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center bg-[#0B0D13] p-2 rounded-lg border border-white/5">
+                    <span className="text-gray-400 font-sans">Explorer Verification:</span>
+                    <a 
+                      href={`https://preprod.cardanoscan.io/address/addr_test1w7a9c8d23b7e452a8e8f81e3a6c11d27f`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-teal-400 hover:text-teal-300 transition-colors flex items-center gap-1 font-sans"
+                    >
+                      <ExternalLink size={10} /> View Validator Contract
+                    </a>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="card text-center py-12 max-w-sm mx-auto">

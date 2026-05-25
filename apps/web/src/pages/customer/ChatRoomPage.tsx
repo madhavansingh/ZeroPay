@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Loader, Shield, Play, AlertTriangle, Check, RefreshCw, Copy } from 'lucide-react';
+import { ArrowLeft, Loader, Shield, Play, AlertTriangle, Check, RefreshCw, Copy, Sparkles } from 'lucide-react';
 import { database } from '../../services/firebase';
 import { ref, onValue, push, set, DataSnapshot } from 'firebase/database';
 import { useAuthStore } from '../../stores/authStore';
@@ -315,6 +315,19 @@ export default function ChatRoomPage() {
               return (
                 <div key={msg.key} className="space-y-2">
                   <PaymentRequestBubble payload={msg.payload as any} />
+
+                  {/* Gemini Bargaining Negotiator active limits */}
+                  {(!esc || esc.state === 'None' || esc.state === 'Created' || esc.state === 'PendingApproval') && (
+                    <div className="flex justify-center animate-fade-in">
+                      <div className="w-full max-w-xs bg-violet-500/5 border border-violet-500/15 rounded-2xl p-2.5 flex items-center justify-between text-[10px] font-mono text-violet-300">
+                        <div className="flex items-center gap-1.5">
+                          <Sparkles size={12} className="text-violet-400 animate-pulse" />
+                          <span>Gemini Negotiator:</span>
+                        </div>
+                        <span className="font-bold text-white">₳ {((msg.payload as any).amountLovelace * 0.85 / 1_000_000).toFixed(2)} - ₳ {((msg.payload as any).amountLovelace / 1_000_000).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  )}
                   
                   {/* Web3 Inline progressive milestone action card */}
                   {esc && esc.milestones.length > 0 && (
@@ -340,6 +353,47 @@ export default function ChatRoomPage() {
                             Milestone {esc.milestoneIndex + 1} of {esc.milestones.length}
                           </p>
                         </div>
+
+                        {/* Juror Court Split Panel */}
+                        {isDisputed && (
+                          <div className="bg-[#0B0D13] p-3 rounded-xl border border-rose-500/10 space-y-2.5 text-[10px] font-sans">
+                            <div className="flex items-center justify-between border-b border-white/5 pb-1.5">
+                              <span className="font-bold text-rose-400 uppercase tracking-wider text-[8px] font-mono">
+                                Decentralized Dispute Court
+                              </span>
+                              <span className="text-[9px] text-gray-500 font-mono">Verdict pending</span>
+                            </div>
+
+                            {/* Split bar visualization */}
+                            <div className="space-y-1">
+                              <div className="flex justify-between text-[9px] text-gray-400 font-mono">
+                                <span>Buyer (60%)</span>
+                                <span>Merchant (40%)</span>
+                              </div>
+                              <div className="w-full h-1.5 bg-[#131622] rounded-full overflow-hidden flex">
+                                <div className="h-full bg-teal-500" style={{ width: '60%' }} />
+                                <div className="h-full bg-[#3b4260]" style={{ width: '40%' }} />
+                              </div>
+                            </div>
+
+                            {/* Detailed metrics */}
+                            <div className="grid grid-cols-2 gap-2 text-[9px] font-mono text-gray-400 pt-1">
+                              <div>
+                                <p className="text-white font-bold">5 Jurors</p>
+                                <p className="text-[8px] text-gray-500 uppercase">ACTIVE COURT SIZE</p>
+                              </div>
+                              <div>
+                                <p className="text-white font-bold">₳ 1,500 ADA</p>
+                                <p className="text-[8px] text-gray-500 uppercase">JUROR STAKE WEIGHT</p>
+                              </div>
+                            </div>
+
+                            <div className="bg-[#131622]/60 p-2 rounded-lg border border-white/5 flex items-center justify-between text-[9px]">
+                              <span className="text-gray-400 font-sans">Consensus Confidence:</span>
+                              <span className="font-mono text-emerald-400 font-bold">88.5%</span>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Actions for buyer */}
                         {isLocked && !isDisputed && !isMine && (

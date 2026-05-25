@@ -14,6 +14,7 @@ interface AuthState {
 
   // Device identity — persisted (survives logout, unique per browser)
   deviceId: string | null;
+  isDeveloperMode: boolean;
 
   // Actions
   setUser: (user: User) => void;
@@ -25,6 +26,7 @@ interface AuthState {
   updateRole: (role: UserRole) => void;
   updateWallet: (address: string, provider: string) => void;
   setWalletProvider: (provider: string | null) => void;
+  setDeveloperMode: (val: boolean) => void;
   logout: () => void;
   reset: () => void;
 }
@@ -37,6 +39,7 @@ const INITIAL_STATE = {
   isAuthenticated: false,
   activeRoleView: 'merchant' as const,
   walletProvider: null,
+  isDeveloperMode: false,
 };
 
 export const useAuthStore = create<AuthState>()(
@@ -83,6 +86,7 @@ export const useAuthStore = create<AuthState>()(
         })),
 
       setWalletProvider: (walletProvider) => set({ walletProvider }),
+      setDeveloperMode: (isDeveloperMode) => set({ isDeveloperMode }),
 
       // logout(): clears all non-device auth state from memory
       // The calling code (useAuth.tsx) is responsible for clearing localStorage
@@ -98,6 +102,7 @@ export const useAuthStore = create<AuthState>()(
       // Persisting auth state causes stale role redirects after logout.
       partialize: (state) => ({
         deviceId: state.deviceId ?? crypto.randomUUID(),
+        isDeveloperMode: state.isDeveloperMode,
       }),
     }
   )
