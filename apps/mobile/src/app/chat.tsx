@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -33,7 +33,8 @@ export default function ChatScreen() {
   const theme = useTheme();
   const [inputText, setInputText] = useState('');
   const [activeRoom, setActiveRoom] = useState<'list' | 'room'>('list');
-  const [negotiationPrice, setNegotiationPrice] = useState(90); // Default bargain quote
+  const [isTyping, setIsTyping] = useState(false);
+  const [proposedPrice, setProposedPrice] = useState(90);
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -99,8 +100,13 @@ export default function ChatScreen() {
     setMessages((prev) => [...prev, newMsg]);
     setInputText('');
 
-    // Simulated merchant response
+    // Simulate typing and response
     setTimeout(() => {
+      setIsTyping(true);
+    }, 1000);
+
+    setTimeout(() => {
+      setIsTyping(false);
       Haptics.success();
       const reply: Message = {
         id: Math.random().toString(),
@@ -109,7 +115,7 @@ export default function ChatScreen() {
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, reply]);
-    }, 2000);
+    }, 3000);
   };
 
   const handleAcceptQuote = () => {
@@ -141,6 +147,7 @@ export default function ChatScreen() {
           <ScrollView style={styles.scroll}>
             {rooms.map((room) => (
               <TouchableOpacity
+                activeOpacity={0.85}
                 key={room.id}
                 style={[styles.roomCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
                 onPress={() => {
@@ -195,21 +202,72 @@ export default function ChatScreen() {
           </View>
 
           {/* Gemini AI Bargaining boundary widget */}
-          <View style={[styles.aiWidget, { backgroundColor: 'rgba(91, 61, 245, 0.05)', borderBottomColor: theme.border }]}>
+          <View style={[styles.aiWidget, { backgroundColor: 'rgba(91, 61, 245, 0.04)', borderBottomColor: theme.border }]}>
             <View style={styles.aiWidgetHeader}>
-              <SymbolView name="brain.head.profile.fill" size={16} tintColor={theme.tint} />
-              <Text style={[styles.aiWidgetTitle, { color: theme.tint }]}>AI Negotiation Bounds</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <SymbolView name="brain.head.profile.fill" size={16} tintColor={theme.tint} />
+                <Text style={[styles.aiWidgetTitle, { color: theme.tint }]}>AI Negotiation Bounds</Text>
+              </View>
+              <View style={styles.aiConfidenceBadge}>
+                <Text style={[
+                  styles.aiConfidenceText,
+                  {
+                    color: proposedPrice < 80 ? Colors.light.error : (proposedPrice >= 80 && proposedPrice < 85 ? Colors.light.warning : Colors.light.success)
+                  }
+                ]}>
+                  {proposedPrice < 80 ? 'Risky Bounds (Acceptance < 20%)' : (proposedPrice >= 80 && proposedPrice < 85 ? 'Fair Bounds (Acceptance ~ 65%)' : 'Optimal Zone (Acceptance ~ 94%)')}
+                </Text>
+              </View>
             </View>
             <View style={styles.sliderMock}>
-              <Text style={[styles.sliderLabel, { color: theme.textSecondary }]}>Market range: 80 - 92 ADA</Text>
-              <View style={[styles.sliderTrack, { backgroundColor: theme.border }]}>
-                <View style={[styles.sliderFill, { backgroundColor: theme.tint, left: '20%', width: '50%' }]} />
-                <View style={[styles.sliderThumb, { backgroundColor: theme.purple, left: '50%' }]} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={[styles.sliderLabel, { color: theme.textSecondary }]}>Market range: 80 - 92 ADA</Text>
+                <View style={styles.adjustRow}>
+                  <TouchableOpacity
+                    style={[styles.adjustBtn, { backgroundColor: theme.backgroundSelected }]}
+                    onPress={() => {
+                      Haptics.light();
+                      setProposedPrice((p) => Math.max(70, p - 1));
+                    }}
+                  >
+                    <SymbolView name="minus" size={10} tintColor={theme.text} />
+                  </TouchableOpacity>
+                  <Text style={[styles.adjustValue, { color: theme.text }]}>{proposedPrice} ADA</Text>
+                  <TouchableOpacity
+                    style={[styles.adjustBtn, { backgroundColor: theme.backgroundSelected }]}
+                    onPress={() => {
+                      Haptics.light();
+                      setProposedPrice((p) => Math.min(110, p + 1));
+                    }}
+                  >
+                    <SymbolView name="plus" size={10} tintColor={theme.text} />
+                  </TouchableOpacity>
+                </View>
               </View>
+              
+              {/* Visual green/red range slider bar */}
+              <View style={[styles.sliderTrack, { backgroundColor: theme.border }]}>
+                {/* Red warning boundary */}
+                <View style={[styles.sliderZone, { backgroundColor: '#FEE2E2', left: '0%', width: '25%' }]} />
+                {/* Green recommended boundary */}
+                <View style={[styles.sliderZone, { backgroundColor: '#D1FAE5', left: '25%', width: '55%' }]} />
+                {/* Red warning boundary */}
+                <View style={[styles.sliderZone, { backgroundColor: '#FEE2E2', left: '80%', width: '20%' }]} />
+                
+                {/* Position the thumb based on proposedPrice from 70 to 110 */}
+                <View style={[
+                  styles.sliderThumb,
+                  {
+                    backgroundColor: theme.purple,
+                    left: `${Math.min(96, Math.max(0, ((proposedPrice - 70) / 40) * 100))}%`
+                  }
+                ]} />
+              </View>
+              
               <View style={styles.sliderValues}>
-                <Text style={[styles.sliderVal, { color: theme.textSecondary }]}>Min: 80</Text>
-                <Text style={[styles.sliderValBold, { color: theme.purple }]}>Current: {negotiationPrice} ADA</Text>
-                <Text style={[styles.sliderVal, { color: theme.textSecondary }]}>Max: 100</Text>
+                <Text style={[styles.sliderVal, { color: theme.textSecondary }]}>Min: 80 ADA</Text>
+                <Text style={[styles.sliderValBold, { color: theme.purple }]}>Proposing: {proposedPrice} ADA</Text>
+                <Text style={[styles.sliderVal, { color: theme.textSecondary }]}>Max: 100 ADA</Text>
               </View>
             </View>
           </View>
@@ -222,7 +280,7 @@ export default function ChatScreen() {
 
               if (isAi) {
                 return (
-                  <View key={m.id} style={[styles.aiAlertCard, { backgroundColor: 'rgba(91, 61, 245, 0.06)' }]}>
+                  <View key={m.id} style={[styles.aiAlertCard, { backgroundColor: 'rgba(91, 61, 245, 0.05)' }]}>
                     <Text style={[styles.aiAlertText, { color: theme.tint }]}>{m.text}</Text>
                   </View>
                 );
@@ -266,10 +324,22 @@ export default function ChatScreen() {
                       </View>
                     )}
                   </View>
-                  <Text style={[styles.timeLabel, { color: theme.textSecondary }]}>{m.timestamp}</Text>
+                  <View style={styles.msgFooterRow}>
+                    <Text style={[styles.timeLabel, { color: theme.textSecondary }]}>{m.timestamp}</Text>
+                    {isMe && <SymbolView name="checkmark.circle.fill" size={10} tintColor={Colors.light.success} />}
+                  </View>
                 </View>
               );
             })}
+            
+            {/* Typing Indicator */}
+            {isTyping && (
+              <View style={[styles.msgWrapper, styles.msgOtherWrapper]}>
+                <View style={[styles.bubble, { backgroundColor: theme.backgroundElement, borderColor: theme.border, borderWidth: 1 }]}>
+                  <Text style={[styles.msgText, { color: theme.textSecondary }]}>Typing...</Text>
+                </View>
+              </View>
+            )}
           </ScrollView>
 
           {/* Typing inputs */}
@@ -402,12 +472,25 @@ const styles = StyleSheet.create({
   aiWidgetHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: Spacing.one,
   },
   aiWidgetTitle: {
     fontSize: 11,
     fontWeight: '800',
     textTransform: 'uppercase',
+  },
+  aiConfidenceBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: BorderRadii.small,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
+  },
+  aiConfidenceText: {
+    fontSize: 9,
+    fontWeight: '800',
   },
   sliderMock: {
     gap: Spacing.one,
@@ -416,23 +499,41 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
   },
+  adjustRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  adjustBtn: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  adjustValue: {
+    fontSize: 11,
+    fontWeight: '800',
+    minWidth: 44,
+    textAlign: 'center',
+  },
   sliderTrack: {
-    height: 4,
-    borderRadius: 2,
+    height: 6,
+    borderRadius: 3,
     position: 'relative',
     marginVertical: 4,
   },
-  sliderFill: {
+  sliderZone: {
     height: '100%',
     position: 'absolute',
-    borderRadius: 2,
   },
   sliderThumb: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     position: 'absolute',
     top: -4,
+    zIndex: 10,
   },
   sliderValues: {
     flexDirection: 'row',
@@ -476,6 +577,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 18,
     fontWeight: '500',
+  },
+  msgFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   timeLabel: {
     fontSize: 9,

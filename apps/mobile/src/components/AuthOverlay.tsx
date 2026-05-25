@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -8,12 +8,13 @@ import {
   Dimensions,
   ScrollView,
   Platform,
+  Pressable,
 } from 'react-native';
 import { SymbolView } from 'expo-symbols';
-import Animated, { FadeIn, FadeInUp, SlideInRight, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInUp, SlideInRight, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { useUserStore } from '../store/user.store';
 import { Haptics } from '../constants/motion';
-import { Colors, Spacing, BorderRadii } from '../constants/theme';
+import { Colors, Spacing, BorderRadii, Shadows } from '../constants/theme';
 import { useTheme } from '../hooks/use-theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -22,12 +23,12 @@ const SLIDES = [
   {
     icon: 'lock.shield.fill',
     title: 'Smart Escrows',
-    desc: 'Lock funds in secure, automated smart contracts. Payments release instantly when milestones are completed.',
+    desc: 'Lock funds in secure, automated multi-signature smart contracts. Payments release instantly when milestones are completed on-chain.',
   },
   {
     icon: 'brain.head.profile.fill',
-    title: 'AI Trust & Negotiations',
-    desc: 'Bargain and verify merchant reputation in real time with Gemini-powered fraud intelligence filters.',
+    title: 'AI Trust Verification',
+    desc: 'Bargain rates and verify merchant reputation in real time with Gemini-powered fraud intelligence filters.',
   },
   {
     icon: 'cpu.fill',
@@ -43,7 +44,7 @@ const SLIDES = [
 
 export function AuthOverlay() {
   const theme = useTheme();
-  const { login, verifyOtp, selectRole, user, isLoggedIn, isOnboarded } = useUserStore();
+  const { login, verifyOtp, selectRole, isLoggedIn, isOnboarded } = useUserStore();
 
   const [step, setStep] = useState<'onboarding' | 'phone' | 'otp' | 'role'>('onboarding');
   const [slideIndex, setSlideIndex] = useState(0);
@@ -51,8 +52,27 @@ export function AuthOverlay() {
   const [otpCode, setOtpCode] = useState('');
   const [selectedRole, setSelectedRole] = useState<'customer' | 'merchant' | 'hybrid' | null>(null);
   
+  // Timer for OTP resend
+  const [resendTimer, setResendTimer] = useState(59);
+
   const scrollViewRef = useRef<ScrollView>(null);
-  const otpScale = useSharedValue(1);
+
+  useEffect(() => {
+    let interval: any;
+    if (step === 'otp') {
+      setResendTimer(59);
+      interval = setInterval(() => {
+        setResendTimer((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [step]);
 
   // Onboarding Carousel handlers
   const handleScroll = (event: any) => {
@@ -108,17 +128,14 @@ export function AuthOverlay() {
     }
   };
 
-  // Role Selection submission
   const handleRoleSelect = async (role: 'customer' | 'merchant' | 'hybrid') => {
     Haptics.success();
     setSelectedRole(role);
     await selectRole(role);
   };
 
-  // Determine current screen state
   if (isLoggedIn && isOnboarded) return null;
 
-  // If logged in but role selection is not finished, enforce role selection screen
   const currentStep = isLoggedIn && !isOnboarded ? 'role' : step;
 
   return (
@@ -137,7 +154,7 @@ export function AuthOverlay() {
             {SLIDES.map((slide, idx) => (
               <View key={idx} style={[styles.slide, { width: SCREEN_WIDTH }]}>
                 <View style={[styles.iconWrapper, { backgroundColor: theme.backgroundSelected }]}>
-                  <SymbolView name={slide.icon as any} size={48} tintColor={theme.tint} />
+                  <SymbolView name={slide.icon as any} size={44} tintColor={theme.tint} />
                 </View>
                 <Text style={[styles.slideTitle, { color: theme.text }]}>{slide.title}</Text>
                 <Text style={[styles.slideDesc, { color: theme.textSecondary }]}>{slide.desc}</Text>
@@ -161,6 +178,7 @@ export function AuthOverlay() {
 
           {/* Action button */}
           <TouchableOpacity
+            activeOpacity={0.85}
             style={[styles.primaryButton, { backgroundColor: theme.tint }]}
             onPress={nextSlide}
           >
@@ -175,29 +193,35 @@ export function AuthOverlay() {
         <Animated.View entering={FadeInUp} style={styles.container}>
           <View style={styles.authHeader}>
             <View style={[styles.logoCircle, { backgroundColor: theme.backgroundSelected }]}>
-              <SymbolView name="shield.lefthalf.filled" size={32} tintColor={theme.tint} />
+              <SymbolView name="shield.lefthalf.filled" size={30} tintColor={theme.tint} />
             </View>
-            <Text style={[styles.title, { color: theme.text }]}>Verify your phone</Text>
+            <Text style={[styles.title, { color: theme.text }]}>Verify Phone</Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-              Enter your mobile number to connect or create your Cardano-escrow wallet.
+              Enter your phone number to sign in or initialize a Cardano escrow wallet.
             </Text>
           </View>
 
-          <View style={[styles.inputWrapper, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
-            <Text style={[styles.phonePrefix, { color: theme.textSecondary }]}>+91</Text>
-            <TextInput
-              keyboardType="number-pad"
-              maxLength={10}
-              placeholder="99999 99999"
-              placeholderTextColor={theme.textSecondary}
-              style={[styles.phoneInput, { color: theme.text }]}
-              value={phoneNumber}
-              onChangeText={(txt) => setPhoneNumber(txt.replace(/[^0-9]/g, ''))}
-              autoFocus
-            />
+          <View style={styles.inputForm}>
+            <View style={[styles.inputWrapper, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+              <Text style={[styles.phonePrefix, { color: theme.textSecondary }]}>+91</Text>
+              <TextInput
+                keyboardType="number-pad"
+                maxLength={10}
+                placeholder="99999 99999"
+                placeholderTextColor={theme.textSecondary}
+                style={[styles.phoneInput, { color: theme.text }]}
+                value={phoneNumber}
+                onChangeText={(txt) => setPhoneNumber(txt.replace(/[^0-9]/g, ''))}
+                autoFocus
+              />
+            </View>
+            <Text style={[styles.hintLabel, { color: theme.textSecondary }]}>
+              🛡️ Verifies credentials via decentralized phone-identity mappings.
+            </Text>
           </View>
 
           <TouchableOpacity
+            activeOpacity={0.85}
             style={[
               styles.primaryButton,
               { backgroundColor: phoneNumber.length === 10 ? theme.tint : theme.border },
@@ -217,7 +241,7 @@ export function AuthOverlay() {
           <View style={styles.authHeader}>
             <Text style={[styles.title, { color: theme.text }]}>Enter Code</Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-              We sent a 6-digit confirmation code to +91 {phoneNumber}
+              We sent a 6-digit verification code to +91 {phoneNumber}
             </Text>
           </View>
 
@@ -242,14 +266,31 @@ export function AuthOverlay() {
             })}
           </View>
 
-          {/* Grid Tactile Keypad */}
+          {/* Resend status indicator */}
+          <View style={styles.timerRow}>
+            {resendTimer > 0 ? (
+              <Text style={[styles.timerText, { color: theme.textSecondary }]}>
+                Resend code in <Text style={{ color: theme.text }}>0:{resendTimer.toString().padStart(2, '0')}</Text>
+              </Text>
+            ) : (
+              <TouchableOpacity onPress={() => setResendTimer(59)}>
+                <Text style={[styles.resendLink, { color: theme.tint }]}>Resend OTP Code</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Tactile Keypad */}
           <View style={styles.keypad}>
             {[['1', '2', '3'], ['4', '5', '6'], ['7', '8', '9'], ['clear', '0', 'back']].map((row, rIdx) => (
               <View key={rIdx} style={styles.keypadRow}>
                 {row.map((btn) => (
-                  <TouchableOpacity
+                  <Pressable
                     key={btn}
-                    style={[styles.keypadButton, { backgroundColor: theme.backgroundElement }]}
+                    style={({ pressed }) => [
+                      styles.keypadButton,
+                      { backgroundColor: theme.backgroundElement },
+                      pressed && styles.keypadPressed,
+                    ]}
                     onPress={() => handleKeypadPress(btn)}
                   >
                     {btn === 'back' ? (
@@ -259,7 +300,7 @@ export function AuthOverlay() {
                     ) : (
                       <Text style={[styles.keypadText, { color: theme.text }]}>{btn}</Text>
                     )}
-                  </TouchableOpacity>
+                  </Pressable>
                 ))}
               </View>
             ))}
@@ -270,15 +311,16 @@ export function AuthOverlay() {
       {currentStep === 'role' && (
         <Animated.View entering={FadeInUp} style={styles.container}>
           <View style={styles.authHeader}>
-            <Text style={[styles.title, { color: theme.text }]}>Select User Profile</Text>
+            <Text style={[styles.title, { color: theme.text }]}>Choose Profile</Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-              Choose your operation mode. You can swap this at any time in settings.
+              Select your operating profile. You can transition roles instantly in your settings.
             </Text>
           </View>
 
           <View style={styles.roleGrid}>
             {/* Customer Role */}
             <TouchableOpacity
+              activeOpacity={0.9}
               style={[
                 styles.roleCard,
                 { backgroundColor: theme.backgroundElement, borderColor: theme.border },
@@ -287,18 +329,22 @@ export function AuthOverlay() {
               onPress={() => handleRoleSelect('customer')}
             >
               <View style={[styles.roleIconWrapper, { backgroundColor: theme.backgroundSelected }]}>
-                <SymbolView name="bag.fill" size={24} tintColor={theme.tint} />
+                <SymbolView name="bag.fill" size={22} tintColor={theme.tint} />
               </View>
               <View style={styles.roleDetails}>
-                <Text style={[styles.roleTitle, { color: theme.text }]}>Customer Mode</Text>
+                <Text style={[styles.roleTitle, { color: theme.text }]}>Customer Profile</Text>
                 <Text style={[styles.roleDesc, { color: theme.textSecondary }]}>
-                  Buy goods and services. Safeguard deposits in locked milestone escrows.
+                  Acquire services. Lock deposits in double-entry milestone contracts.
                 </Text>
               </View>
+              {selectedRole === 'customer' && (
+                <SymbolView name="checkmark.circle.fill" size={16} tintColor={theme.tint} />
+              )}
             </TouchableOpacity>
 
             {/* Merchant Role */}
             <TouchableOpacity
+              activeOpacity={0.9}
               style={[
                 styles.roleCard,
                 { backgroundColor: theme.backgroundElement, borderColor: theme.border },
@@ -306,19 +352,23 @@ export function AuthOverlay() {
               ]}
               onPress={() => handleRoleSelect('merchant')}
             >
-              <View style={[styles.roleIconWrapper, { backgroundColor: '#EEFBF7' }]}>
-                <SymbolView name="cart.fill" size={24} tintColor={Colors.light.success} />
+              <View style={[styles.roleIconWrapper, { backgroundColor: '#EEFDF6' }]}>
+                <SymbolView name="cart.fill" size={22} tintColor={Colors.light.success} />
               </View>
               <View style={styles.roleDetails}>
-                <Text style={[styles.roleTitle, { color: theme.text }]}>Merchant Mode</Text>
+                <Text style={[styles.roleTitle, { color: theme.text }]}>Merchant Profile</Text>
                 <Text style={[styles.roleDesc, { color: theme.textSecondary }]}>
-                  Create storefronts, track incoming revenue deposits, and resolve billing requests.
+                  Setup catalog storefronts, track settlements, and auto-negotiate with AI.
                 </Text>
               </View>
+              {selectedRole === 'merchant' && (
+                <SymbolView name="checkmark.circle.fill" size={16} tintColor={Colors.light.success} />
+              )}
             </TouchableOpacity>
 
             {/* Hybrid Mode */}
             <TouchableOpacity
+              activeOpacity={0.9}
               style={[
                 styles.roleCard,
                 { backgroundColor: theme.backgroundElement, borderColor: theme.border },
@@ -327,14 +377,17 @@ export function AuthOverlay() {
               onPress={() => handleRoleSelect('hybrid')}
             >
               <View style={[styles.roleIconWrapper, { backgroundColor: '#F5F3FF' }]}>
-                <SymbolView name="square.stack.3d.up.fill" size={24} tintColor={theme.purple} />
+                <SymbolView name="square.stack.3d.up.fill" size={22} tintColor={theme.purple} />
               </View>
               <View style={styles.roleDetails}>
                 <Text style={[styles.roleTitle, { color: theme.text }]}>Dual Hybrid Mode</Text>
                 <Text style={[styles.roleDesc, { color: theme.textSecondary }]}>
-                  Operate dynamically as both customer and merchant with shared wallet balance.
+                  Unified credentials. Instantly toggle between customer and merchant roles.
                 </Text>
               </View>
+              {selectedRole === 'hybrid' && (
+                <SymbolView name="checkmark.circle.fill" size={16} tintColor={theme.purple} />
+              )}
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -370,22 +423,23 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   iconWrapper: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Spacing.four,
   },
   slideTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
     textAlign: 'center',
+    letterSpacing: -0.5,
   },
   slideDesc: {
-    fontSize: 15,
+    fontSize: 14,
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 20,
   },
   dotContainer: {
     flexDirection: 'row',
@@ -393,12 +447,12 @@ const styles = StyleSheet.create({
     marginVertical: Spacing.four,
   },
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   activeDot: {
-    width: 24,
+    width: 18,
   },
   primaryButton: {
     width: '100%',
@@ -409,7 +463,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
   authHeader: {
@@ -419,22 +473,28 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   logoCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Spacing.two,
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
+    letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 13,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 18,
     paddingHorizontal: Spacing.three,
+  },
+  inputForm: {
+    width: '100%',
+    gap: Spacing.two,
+    marginVertical: Spacing.five,
   },
   inputWrapper: {
     flexDirection: 'row',
@@ -445,34 +505,50 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.three,
     width: '100%',
     gap: Spacing.two,
-    marginVertical: Spacing.six,
   },
   phonePrefix: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
   phoneInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    letterSpacing: 1,
+    letterSpacing: 1.5,
+  },
+  hintLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    paddingLeft: Spacing.one,
   },
   otpGrid: {
     flexDirection: 'row',
     gap: Spacing.two,
-    marginVertical: Spacing.five,
+    marginVertical: Spacing.four,
   },
   otpBubble: {
-    width: 48,
-    height: 56,
+    width: 44,
+    height: 52,
     borderRadius: BorderRadii.medium,
     borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center',
   },
   otpChar: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
+  },
+  timerRow: {
+    marginVertical: Spacing.two,
+  },
+  timerText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  resendLink: {
+    fontSize: 12,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
   keypad: {
     width: '100%',
@@ -485,17 +561,21 @@ const styles = StyleSheet.create({
   },
   keypadButton: {
     flex: 1,
-    height: 60,
+    height: 56,
     borderRadius: BorderRadii.medium,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  keypadPressed: {
+    transform: [{ scale: 0.96 }],
+    opacity: 0.8,
+  },
   keypadText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
   },
   keypadTextClear: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
   },
   roleGrid: {
@@ -512,8 +592,8 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   roleIconWrapper: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
     borderRadius: BorderRadii.medium,
     justifyContent: 'center',
     alignItems: 'center',
@@ -523,11 +603,11 @@ const styles = StyleSheet.create({
     gap: Spacing.half,
   },
   roleTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
   roleDesc: {
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 11,
+    lineHeight: 15,
   },
 });

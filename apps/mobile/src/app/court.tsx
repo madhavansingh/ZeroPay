@@ -192,6 +192,13 @@ export default function CourtScreen() {
                   </Text>
                 </View>
               </View>
+
+              <View style={[styles.mechanicsBox, { backgroundColor: theme.background, borderColor: theme.border, borderWidth: 1 }]}>
+                <SymbolView name={"gavel.fill" as any} size={12} tintColor={theme.tint} style={{ marginRight: 6, marginTop: 2 }} />
+                <Text style={[styles.mechanicsText, { color: theme.textSecondary }]}>
+                  Arbitration Protocol: Jurors stake 50 ADA to participate. Malicious or minority voters have their stakes slashed, which is redistributed to the majority voters. This aligns incentives and guarantees objective verdict outcomes.
+                </Text>
+              </View>
             </View>
 
             {/* Evidence Timeline */}
@@ -478,5 +485,17 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
+  },
+  mechanicsBox: {
+    flexDirection: 'row',
+    padding: Spacing.three,
+    borderRadius: BorderRadii.medium,
+    marginTop: Spacing.three,
+  },
+  mechanicsText: {
+    fontSize: 10,
+    lineHeight: 14,
+    flex: 1,
+    fontWeight: '500',
   },
 });

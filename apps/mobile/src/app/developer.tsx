@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -28,6 +28,31 @@ interface WebhookLog {
 export default function DeveloperScreen() {
   const theme = useTheme();
   const [replaying, setReplaying] = useState<string | null>(null);
+  
+  // Ledger verification states
+  const [verifyingLedger, setVerifyingLedger] = useState(false);
+  const [validationTime, setValidationTime] = useState<string | null>(null);
+  const [validationSuccess, setValidationSuccess] = useState(true);
+
+  // Fluctuating telemetry simulation
+  const [cardanoLatency, setCardanoLatency] = useState(20);
+  const [queueSizes, setQueueSizes] = useState({
+    txConfirmation: 0,
+    receiptGeneration: 1,
+    invoiceExpiry: 0,
+  });
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCardanoLatency(Math.floor(18 + Math.random() * 8));
+      setQueueSizes((prev) => ({
+        txConfirmation: Math.random() > 0.7 ? Math.floor(Math.random() * 2) : prev.txConfirmation,
+        receiptGeneration: Math.random() > 0.5 ? Math.floor(Math.random() * 3) : prev.receiptGeneration,
+        invoiceExpiry: Math.random() > 0.8 ? Math.floor(Math.random() * 2) : prev.invoiceExpiry,
+      }));
+    }, 4000);
+    return () => clearInterval(timer);
+  }, []);
 
   const [logs, setLogs] = useState<WebhookLog[]>([
     {
@@ -69,6 +94,20 @@ export default function DeveloperScreen() {
     Haptics.success();
   };
 
+  const runLedgerCheck = async () => {
+    Haptics.selection();
+    setVerifyingLedger(true);
+    setValidationTime(null);
+    
+    // Simulate complex ledger cryptographic audit
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    
+    setVerifyingLedger(false);
+    setValidationSuccess(true);
+    setValidationTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    Haptics.success();
+  };
+
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: theme.background }]}>
       <Animated.View entering={FadeIn} style={styles.container}>
@@ -89,7 +128,7 @@ export default function DeveloperScreen() {
                 <Text style={[styles.metricLabel, { color: theme.textSecondary }]}>Cardano node</Text>
                 <View style={[styles.statusIndicator, { backgroundColor: Colors.light.success }]} />
               </View>
-              <Text style={[styles.metricValue, { color: theme.text }]}>20ms lat</Text>
+              <Text style={[styles.metricValue, { color: theme.text }]}>{cardanoLatency}ms lat</Text>
             </View>
 
             <View style={[styles.metricCard, { backgroundColor: theme.backgroundElement }]}>
@@ -113,15 +152,33 @@ export default function DeveloperScreen() {
             <Text style={[styles.validationDesc, { color: theme.textSecondary }]}>
               On-chain UTxO lock totals match database ledger entries exactly. No asset leakage or anomalies detected.
             </Text>
+            
+            {/* Interactive verification button */}
+            <TouchableOpacity
+              style={[styles.verifyBtn, { backgroundColor: theme.backgroundSelected }]}
+              onPress={runLedgerCheck}
+              disabled={verifyingLedger}
+            >
+              {verifyingLedger ? (
+                <ActivityIndicator size="small" color={theme.tint} />
+              ) : (
+                <>
+                  <SymbolView name="shield.fill" size={12} tintColor={theme.tint} style={{ marginRight: 6 }} />
+                  <Text style={[styles.verifyBtnText, { color: theme.tint }]}>
+                    {validationTime ? `Audit Passed at ${validationTime}` : 'Trigger ledger audit verification'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
 
           {/* Queue telemetries */}
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Worker Queue sizes</Text>
           <View style={[styles.queueCard, { backgroundColor: theme.backgroundElement }, Shadows.light]}>
             {[
-              { name: 'tx-confirmation', size: 0, status: 'idle' },
-              { name: 'receipt-generation', size: 1, status: 'active' },
-              { name: 'invoice-expiry', size: 0, status: 'idle' },
+              { name: 'tx-confirmation', size: queueSizes.txConfirmation, status: queueSizes.txConfirmation > 0 ? 'active' : 'idle' },
+              { name: 'receipt-generation', size: queueSizes.receiptGeneration, status: queueSizes.receiptGeneration > 0 ? 'active' : 'idle' },
+              { name: 'invoice-expiry', size: queueSizes.invoiceExpiry, status: queueSizes.invoiceExpiry > 0 ? 'active' : 'idle' },
             ].map((q, idx) => (
               <View key={idx} style={[styles.queueRow, idx > 0 && { borderTopColor: theme.border, borderTopWidth: 1 }]}>
                 <View style={styles.queueMeta}>
@@ -265,6 +322,18 @@ const styles = StyleSheet.create({
   validationDesc: {
     fontSize: 12,
     lineHeight: 18,
+  },
+  verifyBtn: {
+    height: 38,
+    borderRadius: BorderRadii.medium,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    marginTop: Spacing.two,
+  },
+  verifyBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   queueCard: {
     paddingHorizontal: Spacing.four,

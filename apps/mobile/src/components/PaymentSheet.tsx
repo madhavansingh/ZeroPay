@@ -34,17 +34,25 @@ export function PaymentSheet({
 }) {
   const theme = useTheme();
   const [selectedMethod, setSelectedMethod] = useState<'cardano' | 'base' | 'usdc' | 'apple'>('cardano');
-  const [processing, setProcessing] = useState(false);
+  const [processingState, setProcessingState] = useState<'idle' | 'signing' | 'success'>('idle');
+  const [showCollateralTip, setShowCollateralTip] = useState(false);
 
   if (!details) return null;
 
   const handlePay = async () => {
     Haptics.selection();
-    setProcessing(true);
+    setProcessingState('signing');
+    
     // Simulate smart contract locking/signing delay
     await new Promise((resolve) => setTimeout(resolve, 2000));
-    setProcessing(false);
+    
+    setProcessingState('success');
     Haptics.success();
+    
+    // Give time to show checkmark animation
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    
+    setProcessingState('idle');
     onPaymentSuccess(selectedMethod);
   };
 
@@ -90,129 +98,136 @@ export function PaymentSheet({
                 Haptics.light();
                 onClose();
               }}
-              disabled={processing}
+              disabled={processingState !== 'idle'}
             >
               <SymbolView name="xmark" size={14} tintColor={theme.text} />
             </TouchableOpacity>
           </View>
 
-          {/* Amount Card */}
           <View style={styles.content}>
-            <View style={[styles.amountCard, { backgroundColor: theme.backgroundElement }]}>
-              <Text style={[styles.amountLabel, { color: theme.textSecondary }]}>Locking Funds to Escrow</Text>
-              <Text style={[styles.amountAda, { color: theme.text }]}>{details.amountAda} ADA</Text>
-              <Text style={[styles.amountUsd, { color: theme.textSecondary }]}>
-                ≈ ${details.usdValue.toFixed(2)} USD
-              </Text>
-              <View style={[styles.recipientRow, { borderTopColor: theme.border }]}>
-                <Text style={[styles.recipientLabel, { color: theme.textSecondary }]}>Merchant Storefront</Text>
-                <Text style={[styles.recipientValue, { color: theme.text }]}>{details.shopName}</Text>
-              </View>
-            </View>
-
-            {/* Payment Method Selectors */}
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Select Secure Channel</Text>
-            <View style={styles.methodList}>
-              {/* Cardano Wallet */}
-              <TouchableOpacity
-                style={[
-                  styles.methodItem,
-                  { backgroundColor: theme.backgroundElement, borderColor: theme.border },
-                  selectedMethod === 'cardano' && { borderColor: theme.tint, borderWidth: 1.5 },
-                ]}
-                onPress={() => {
-                  Haptics.light();
-                  setSelectedMethod('cardano');
-                }}
-                disabled={processing}
-              >
-                <View style={[styles.methodIcon, { backgroundColor: theme.backgroundSelected }]}>
-                  <SymbolView name="shield.fill" size={18} tintColor={theme.tint} />
+            {processingState === 'success' ? (
+              /* Satisfying success tick animation overlay */
+              <Animated.View entering={FadeIn} style={styles.successWrapper}>
+                <View style={[styles.successCircle, { backgroundColor: '#D1FAE5' }]}>
+                  <SymbolView name="checkmark.circle.fill" size={48} tintColor={Colors.light.success} />
                 </View>
-                <View style={styles.methodInfo}>
-                  <Text style={[styles.methodName, { color: theme.text }]}>Cardano native Escrow</Text>
-                  <Text style={[styles.methodDesc, { color: theme.textSecondary }]}>
-                    Locked via multi-signature script on preview-testnet
+                <Text style={[styles.successText, { color: theme.text }]}>Contract Locked Successfully</Text>
+                <Text style={[styles.successSub, { color: theme.textSecondary }]}>
+                  Funds are secured on-chain. Milestone checks are active.
+                </Text>
+              </Animated.View>
+            ) : (
+              <>
+                {/* Amount details */}
+                <View style={[styles.amountCard, { backgroundColor: theme.backgroundElement }]}>
+                  <Text style={[styles.amountLabel, { color: theme.textSecondary }]}>Locking Funds to Escrow</Text>
+                  <Text style={[styles.amountAda, { color: theme.text }]}>{details.amountAda} ADA</Text>
+                  <Text style={[styles.amountUsd, { color: theme.textSecondary }]}>
+                    ≈ ${details.usdValue.toFixed(2)} USD
                   </Text>
+                  <View style={[styles.recipientRow, { borderTopColor: theme.border }]}>
+                    <Text style={[styles.recipientLabel, { color: theme.textSecondary }]}>Merchant Storefront</Text>
+                    <Text style={[styles.recipientValue, { color: theme.text }]}>{details.shopName}</Text>
+                  </View>
                 </View>
-              </TouchableOpacity>
 
-              {/* Base Layer-2 */}
-              <TouchableOpacity
-                style={[
-                  styles.methodItem,
-                  { backgroundColor: theme.backgroundElement, borderColor: theme.border },
-                  selectedMethod === 'base' && { borderColor: theme.tint, borderWidth: 1.5 },
-                ]}
-                onPress={() => {
-                  Haptics.light();
-                  setSelectedMethod('base');
-                }}
-                disabled={processing}
-              >
-                <View style={[styles.methodIcon, { backgroundColor: '#EEF2FF' }]}>
-                  <SymbolView name="bolt.fill" size={18} tintColor="#3B82F6" />
-                </View>
-                <View style={styles.methodInfo}>
-                  <Text style={[styles.methodName, { color: theme.text }]}>Base Layer-2 Settlement</Text>
-                  <Text style={[styles.methodDesc, { color: theme.textSecondary }]}>
-                    Zero-latency off-chain commitments with instant locking
-                  </Text>
-                </View>
-              </TouchableOpacity>
+                {/* Channel Selectors */}
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Select Secure Channel</Text>
+                <View style={styles.methodList}>
+                  {/* Cardano Wallet */}
+                  <TouchableOpacity
+                    style={[
+                      styles.methodItem,
+                      { backgroundColor: theme.backgroundElement, borderColor: theme.border },
+                      selectedMethod === 'cardano' && { borderColor: theme.tint, borderWidth: 1.5 },
+                    ]}
+                    onPress={() => {
+                      Haptics.light();
+                      setSelectedMethod('cardano');
+                    }}
+                    disabled={processingState !== 'idle'}
+                  >
+                    <View style={[styles.methodIcon, { backgroundColor: theme.backgroundSelected }]}>
+                      <SymbolView name="shield.fill" size={18} tintColor={theme.tint} />
+                    </View>
+                    <View style={styles.methodInfo}>
+                      <Text style={[styles.methodName, { color: theme.text }]}>Cardano native Escrow</Text>
+                      <Text style={[styles.methodDesc, { color: theme.textSecondary }]}>
+                        Locked via multi-signature PlutusV2 script on testnet
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
 
-              {/* USDC stablecoin */}
-              <TouchableOpacity
-                style={[
-                  styles.methodItem,
-                  { backgroundColor: theme.backgroundElement, borderColor: theme.border },
-                  selectedMethod === 'usdc' && { borderColor: theme.tint, borderWidth: 1.5 },
-                ]}
-                onPress={() => {
-                  Haptics.light();
-                  setSelectedMethod('usdc');
-                }}
-                disabled={processing}
-              >
-                <View style={[styles.methodIcon, { backgroundColor: '#EEFDF6' }]}>
-                  <SymbolView name="dollarsign.circle.fill" size={18} tintColor="#10B981" />
+                  {/* Base L2 */}
+                  <TouchableOpacity
+                    style={[
+                      styles.methodItem,
+                      { backgroundColor: theme.backgroundElement, borderColor: theme.border },
+                      selectedMethod === 'base' && { borderColor: theme.tint, borderWidth: 1.5 },
+                    ]}
+                    onPress={() => {
+                      Haptics.light();
+                      setSelectedMethod('base');
+                    }}
+                    disabled={processingState !== 'idle'}
+                  >
+                    <View style={[styles.methodIcon, { backgroundColor: '#EEF2FF' }]}>
+                      <SymbolView name="bolt.fill" size={18} tintColor="#3B82F6" />
+                    </View>
+                    <View style={styles.methodInfo}>
+                      <Text style={[styles.methodName, { color: theme.text }]}>Base Layer-2 Settlement</Text>
+                      <Text style={[styles.methodDesc, { color: theme.textSecondary }]}>
+                        Zero-latency off-chain commitments with instant locking
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
                 </View>
-                <View style={styles.methodInfo}>
-                  <Text style={[styles.methodName, { color: theme.text }]}>USDC Stablecoin Lock</Text>
-                  <Text style={[styles.methodDesc, { color: theme.textSecondary }]}>
-                    Pegged dollar safety, immune to market volatility
-                  </Text>
+
+                {/* Fee Breakdowns */}
+                <View style={[styles.feeCard, { backgroundColor: theme.backgroundElement }]}>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    style={styles.feeRow}
+                    onPress={() => setShowCollateralTip(!showCollateralTip)}
+                  >
+                    <View style={styles.feeLabelRow}>
+                      <Text style={[styles.feeLabel, { color: theme.textSecondary }]}>Network Fee</Text>
+                      <SymbolView name="questionmark.circle.fill" size={10} tintColor={theme.textSecondary} />
+                    </View>
+                    <Text style={[styles.feeValue, { color: theme.text }]}>{getMethodFee()}</Text>
+                  </TouchableOpacity>
+
+                  {showCollateralTip && (
+                    <Animated.View entering={FadeIn} style={[styles.collateralTip, { backgroundColor: theme.backgroundSelected }]}>
+                      <Text style={[styles.collateralTipText, { color: theme.textSecondary }]}>
+                        Cardano smart contract validation fee (0.17 ADA) is locked as UTxO collateral. Excess deposits return to your wallet upon script settlement.
+                      </Text>
+                    </Animated.View>
+                  )}
+
+                  <View style={styles.feeRow}>
+                    <Text style={[styles.feeLabel, { color: theme.textSecondary }]}>Settlement Speed</Text>
+                    <Text style={[styles.feeValue, { color: theme.text }]}>{getMethodSpeed()}</Text>
+                  </View>
                 </View>
-              </TouchableOpacity>
-            </View>
 
-            {/* Fee Breakdowns */}
-            <View style={[styles.feeCard, { backgroundColor: theme.backgroundElement }]}>
-              <View style={styles.feeRow}>
-                <Text style={[styles.feeLabel, { color: theme.textSecondary }]}>Network Fee</Text>
-                <Text style={[styles.feeValue, { color: theme.text }]}>{getMethodFee()}</Text>
-              </View>
-              <View style={styles.feeRow}>
-                <Text style={[styles.feeLabel, { color: theme.textSecondary }]}>Settlement speed</Text>
-                <Text style={[styles.feeValue, { color: theme.text }]}>{getMethodSpeed()}</Text>
-              </View>
-            </View>
-
-            {/* Interactive Confirm Button */}
-            <TouchableOpacity
-              style={[styles.payBtn, { backgroundColor: theme.tint }]}
-              onPress={handlePay}
-              disabled={processing}
-            >
-              {processing ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <SymbolView name="lock.fill" size={14} tintColor="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={styles.payBtnText}>Sign & Lock Funds</Text>
-                </>
-              )}
-            </TouchableOpacity>
+                {/* Confirm Button */}
+                <TouchableOpacity
+                  style={[styles.payBtn, { backgroundColor: theme.tint }]}
+                  onPress={handlePay}
+                  disabled={processingState !== 'idle'}
+                >
+                  {processingState === 'signing' ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <SymbolView name="lock.fill" size={14} tintColor="#FFFFFF" style={{ marginRight: 6 }} />
+                      <Text style={styles.payBtnText}>Sign & Lock Funds</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </Animated.View>
       </View>
@@ -335,6 +350,12 @@ const styles = StyleSheet.create({
   feeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  feeLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   feeLabel: {
     fontSize: 12,
@@ -343,6 +364,16 @@ const styles = StyleSheet.create({
   feeValue: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  collateralTip: {
+    padding: Spacing.two,
+    borderRadius: BorderRadii.small,
+    marginTop: Spacing.half,
+  },
+  collateralTipText: {
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '600',
   },
   payBtn: {
     height: 52,
@@ -357,5 +388,26 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
+  },
+  successWrapper: {
+    paddingVertical: Spacing.five,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.three,
+  },
+  successCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  successText: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  successSub: {
+    fontSize: 13,
+    textAlign: 'center',
   },
 });
