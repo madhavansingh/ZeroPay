@@ -8,6 +8,7 @@ import {
 } from 'expo-router/ui';
 import { SymbolView } from 'expo-symbols';
 import { Pressable, useColorScheme, View, StyleSheet } from 'react-native';
+import { useUserStore } from '../store/user.store';
 
 import { ExternalLink } from './external-link';
 import { ThemedText } from './themed-text';
@@ -16,6 +17,8 @@ import { ThemedView } from './themed-view';
 import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 
 export default function AppTabs() {
+  const { developerModeEnabled } = useUserStore();
+
   return (
     <Tabs>
       <TabSlot style={{ height: '100%' }} />
@@ -27,6 +30,17 @@ export default function AppTabs() {
           <TabTrigger name="explore" href="/explore" asChild>
             <TabButton>Explore</TabButton>
           </TabTrigger>
+          <TabTrigger name="chat" href={"/chat" as any} asChild>
+            <TabButton>Chat</TabButton>
+          </TabTrigger>
+          <TabTrigger name="court" href={"/court" as any} asChild>
+            <TabButton>Court</TabButton>
+          </TabTrigger>
+          {developerModeEnabled && (
+            <TabTrigger name="developer" href={"/developer" as any} asChild>
+              <TabButton>Developer</TabButton>
+            </TabTrigger>
+          )}
         </CustomTabList>
       </TabList>
     </Tabs>
@@ -55,14 +69,14 @@ export function CustomTabList(props: TabListProps) {
     <View {...props} style={styles.tabListContainer}>
       <ThemedView type="backgroundElement" style={styles.innerContainer}>
         <ThemedText type="smallBold" style={styles.brandText}>
-          Expo Starter
+          ZeroPay
         </ThemedText>
 
         {props.children}
 
-        <ExternalLink href="https://docs.expo.dev" asChild>
+        <ExternalLink href="https://preview.cardanoscan.io" asChild>
           <Pressable style={styles.externalPressable}>
-            <ThemedText type="link">Docs</ThemedText>
+            <ThemedText type="link">Explorer</ThemedText>
             <SymbolView
               tintColor={colors.text}
               name={{ ios: 'arrow.up.right.square', web: 'link' }}

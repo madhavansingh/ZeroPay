@@ -43,9 +43,11 @@
       "reactCompiler": true
     },
     "extra": {
+      "router": {},
       "eas": {
-        "projectId": "6b9322cc-95c5-4ad9-bf9f-68252277d33d"
+        "projectId": "77d10fa9-ca80-44d4-b831-3c44ec021136"
       }
-    }
+    },
+    "owner": "madhavannn"
   }
 }

@@ -37,12 +37,12 @@ export function CompatDiagnosticOverlay() {
         <View style={styles.card}>
           <View style={styles.header}>
             <Text style={styles.alertIcon}>⚠</Text>
-            <Text style={styles.title}>Expo Go Sandbox Warning</Text>
+            <Text style={styles.title}>Custom Development Build Required</Text>
           </View>
           
           <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
             <Text style={styles.description}>
-              ZeroPay relies on secure hardware key storage (<Text style={styles.codeText}>expo-secure-store</Text>), 
+              This project now requires a custom development build. ZeroPay relies on secure hardware key storage (<Text style={styles.codeText}>expo-secure-store</Text>), 
               native SQLite database sync adapters, and hardware haptic response loops. 
               These custom modules are not supported in the default Expo Go application sandbox.
             </Text>
@@ -95,7 +95,7 @@ export function CompatDiagnosticOverlay() {
               style={styles.dismissButton} 
               onPress={() => setDismissed(true)}
             >
-              <Text style={styles.dismissButtonText}>Proceed in Sandbox Mode</Text>
+              <Text style={styles.dismissButtonText}>Dismiss Warning (Features May Fail)</Text>
             </TouchableOpacity>
           </View>
         </View>

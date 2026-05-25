@@ -9,15 +9,17 @@ import {
   TextInput,
   View,
   ActivityIndicator,
+  SafeAreaView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, MaxContentWidth, Spacing, BorderRadii } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 const CATEGORIES = ['all', 'food', 'retail', 'services', 'vendor', 'digital'];
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000';
 
 export default function ExploreScreen() {
   const safeAreaInsets = useSafeAreaInsets();
@@ -38,7 +40,7 @@ export default function ExploreScreen() {
       setLoading(true);
       try {
         const catFilter = selectedCategory !== 'all' ? `?category=${selectedCategory}` : '';
-        const res = await fetch(`http://localhost:5050/api/v1/marketplace/feed${catFilter}`, {
+        const res = await fetch(`${API_URL}/api/v1/marketplace/feed${catFilter}`, {
           signal: AbortSignal.timeout(3000),
         });
         const payload = await res.json();
@@ -100,7 +102,11 @@ export default function ExploreScreen() {
       }
     };
 
-    fetchFeed();
+    const timer = setTimeout(() => {
+      fetchFeed();
+    }, 200);
+
+    return () => clearTimeout(timer);
   }, [selectedCategory]);
 
   const filteredMerchants = merchants.filter((m) =>
@@ -110,9 +116,15 @@ export default function ExploreScreen() {
 
   const contentPlatformStyle = Platform.select({
     android: {
-      paddingTop: insets.top,
-      paddingLeft: insets.left,
-      paddingRight: insets.right,
+      paddingTop: safeAreaInsets.top,
+      paddingLeft: safeAreaInsets.left,
+      paddingRight: safeAreaInsets.right,
+      paddingBottom: insets.bottom,
+    },
+    ios: {
+      paddingTop: safeAreaInsets.top,
+      paddingLeft: safeAreaInsets.left,
+      paddingRight: safeAreaInsets.right,
       paddingBottom: insets.bottom,
     },
     web: {
@@ -122,133 +134,135 @@ export default function ExploreScreen() {
   });
 
   return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: theme.background }]}
-      contentInset={insets}
-      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}
-    >
-      <ThemedView style={styles.container}>
-        {/* Title */}
-        <ThemedView style={styles.header}>
-          <ThemedText type="title">ZeroPay Marketplace</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            Discover verified merchants accepting Cardano smart escrows
-          </ThemedText>
-        </ThemedView>
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+      <ScrollView
+        style={[styles.scrollView, { backgroundColor: theme.background }]}
+        contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}
+      >
+        <ThemedView style={styles.container}>
+          {/* Title */}
+          <ThemedView style={styles.header}>
+            <ThemedText type="title">Marketplace</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              Discover verified merchants accepting Cardano smart escrows
+            </ThemedText>
+          </ThemedView>
 
-        {/* Search Input */}
-        <ThemedView type="backgroundElement" style={styles.searchWrapper}>
-          <SymbolView tintColor={theme.iconSecondary} name="magnifyingglass" size={16} />
-          <TextInput
-            placeholder="Search stores or services..."
-            placeholderTextColor={theme.iconSecondary}
-            value={search}
-            onChangeText={setSearch}
-            style={[styles.searchInput, { color: theme.text }]}
-          />
-        </ThemedView>
+          {/* Search Input */}
+          <ThemedView type="backgroundElement" style={[styles.searchWrapper, { borderColor: theme.border, borderWidth: 1 }]}>
+            <SymbolView tintColor={theme.iconSecondary} name="magnifyingglass" size={16} />
+            <TextInput
+              placeholder="Search stores or services..."
+              placeholderTextColor={theme.iconSecondary}
+              value={search}
+              onChangeText={setSearch}
+              style={[styles.searchInput, { color: theme.text }]}
+            />
+          </ThemedView>
 
-        {/* Horizontal Category Scroll */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.categoriesScroll}
-          contentContainerStyle={styles.categoriesContent}
-        >
-          {CATEGORIES.map((cat) => (
-            <Pressable
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              style={[
-                styles.categoryChip,
-                { backgroundColor: theme.backgroundElement },
-                selectedCategory === cat && { borderColor: theme.tint, borderWidth: 1 },
-              ]}
-            >
-              <ThemedText
-                type="smallBold"
+          {/* Horizontal Category Scroll */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.categoriesScroll}
+            contentContainerStyle={styles.categoriesContent}
+          >
+            {CATEGORIES.map((cat) => (
+              <Pressable
+                key={cat}
+                onPress={() => setSelectedCategory(cat)}
                 style={[
-                  styles.categoryText,
-                  selectedCategory === cat && { color: theme.tint },
+                  styles.categoryChip,
+                  { backgroundColor: theme.backgroundElement },
+                  selectedCategory === cat && { borderColor: theme.tint, borderWidth: 1.5 },
                 ]}
               >
-                {cat.toUpperCase()}
-              </ThemedText>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        {/* Merchants List */}
-        <ThemedView style={styles.listSection}>
-          {loading ? (
-            <ActivityIndicator size="small" color={theme.tint} style={styles.loader} />
-          ) : filteredMerchants.length === 0 ? (
-            <ThemedView style={styles.emptyCard}>
-              <ThemedText type="small" themeColor="textSecondary">
-                No verified merchants match your search filters.
-              </ThemedText>
-            </ThemedView>
-          ) : (
-            filteredMerchants.map((m) => (
-              <ThemedView key={m.merchantId} type="backgroundElement" style={styles.merchantCard}>
-                {/* Logo and title row */}
-                <View style={styles.cardHeader}>
-                  <Image source={{ uri: m.profileImageUrl }} style={styles.avatar} />
-                  <View style={styles.headerDetails}>
-                    <View style={styles.titleRow}>
-                      <ThemedText type="defaultSemiBold" style={{ color: theme.text }}>
-                        {m.shopName}
-                      </ThemedText>
-                      {m.verifiedMerchantBadge && (
-                        <SymbolView tintColor={theme.tint} name="checkmark.seal.fill" size={14} />
-                      )}
-                    </View>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      {m.category.toUpperCase()} · {m.location.city}
-                    </ThemedText>
-                  </View>
-                </View>
-
-                {/* Description */}
-                <ThemedText type="small" style={styles.description}>
-                  {m.description}
+                <ThemedText
+                  type="smallBold"
+                  style={[
+                    styles.categoryText,
+                    selectedCategory === cat && { color: theme.tint },
+                  ]}
+                >
+                  {cat.toUpperCase()}
                 </ThemedText>
+              </Pressable>
+            ))}
+          </ScrollView>
 
-                {/* Footer ratings */}
-                <View style={[styles.cardFooter, { borderTopColor: theme.border }]}>
-                  <View style={styles.footerStat}>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      Reputation
-                    </ThemedText>
-                    <ThemedText type="smallBold" style={{ color: theme.tint }}>
-                      {m.reputationScore}%
-                    </ThemedText>
-                  </View>
-                  <View style={styles.footerStat}>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      Tier
-                    </ThemedText>
-                    <ThemedText
-                      type="smallBold"
-                      style={{
-                        color:
-                          m.reliabilityTier === 'platinum'
-                            ? '#10b981'
-                            : m.reliabilityTier === 'gold'
-                            ? '#f59e0b'
-                            : '#8b90a8',
-                      }}
-                    >
-                      {m.reliabilityTier.toUpperCase()}
-                    </ThemedText>
-                  </View>
-                </View>
+          {/* Merchants List */}
+          <ThemedView style={styles.listSection}>
+            {loading ? (
+              <ActivityIndicator size="small" color={theme.tint} style={styles.loader} />
+            ) : filteredMerchants.length === 0 ? (
+              <ThemedView style={styles.emptyCard}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  No verified merchants match your search filters.
+                </ThemedText>
               </ThemedView>
-            ))
-          )}
+            ) : (
+              filteredMerchants.map((m) => (
+                <ThemedView key={m.merchantId} type="backgroundElement" style={[styles.merchantCard, { borderColor: theme.border, borderWidth: 1 }]}>
+                  {/* Logo and title row */}
+                  <View style={styles.cardHeader}>
+                    <Image source={{ uri: m.profileImageUrl }} style={styles.avatar} />
+                    <View style={styles.headerDetails}>
+                      <View style={styles.titleRow}>
+                        <ThemedText type="default" style={{ color: theme.text, fontWeight: '800' }}>
+                          {m.shopName}
+                        </ThemedText>
+                        {m.verifiedMerchantBadge && (
+                          <SymbolView tintColor={theme.tint} name="checkmark.seal.fill" size={14} />
+                        )}
+                      </View>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {m.category.toUpperCase()} · {m.location.city}
+                      </ThemedText>
+                    </View>
+                  </View>
+
+                  {/* Description */}
+                  <ThemedText type="small" style={styles.description}>
+                    {m.description}
+                  </ThemedText>
+
+                  {/* Footer ratings */}
+                  <View style={[styles.cardFooter, { borderTopColor: theme.border }]}>
+                    <View style={styles.footerStat}>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        Reputation
+                      </ThemedText>
+                      <ThemedText type="smallBold" style={{ color: theme.tint, fontWeight: '800' }}>
+                        {m.reputationScore}%
+                      </ThemedText>
+                    </View>
+                    <View style={styles.footerStat}>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        Tier
+                      </ThemedText>
+                      <ThemedText
+                        type="smallBold"
+                        style={{
+                          fontWeight: '800',
+                          color:
+                            m.reliabilityTier === 'platinum'
+                              ? '#10b981'
+                              : m.reliabilityTier === 'gold'
+                              ? '#f59e0b'
+                              : '#8b90a8',
+                        }}
+                      >
+                        {m.reliabilityTier.toUpperCase()}
+                      </ThemedText>
+                    </View>
+                  </View>
+                </ThemedView>
+              ))
+            )}
+          </ThemedView>
         </ThemedView>
-      </ThemedView>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -264,10 +278,10 @@ const styles = StyleSheet.create({
     maxWidth: MaxContentWidth,
     flexGrow: 1,
     paddingHorizontal: Spacing.four,
-    gap: Spacing.five,
+    gap: Spacing.four,
   },
   header: {
-    paddingTop: Spacing.six,
+    paddingTop: Spacing.four,
     gap: Spacing.one,
   },
   searchWrapper: {
@@ -275,13 +289,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,
-    borderRadius: Spacing.three,
+    borderRadius: BorderRadii.medium,
     gap: Spacing.two,
   },
   searchInput: {
     flex: 1,
     fontSize: 14,
     fontFamily: 'System',
+    fontWeight: '600',
   },
   categoriesScroll: {
     marginHorizontal: -Spacing.four,
@@ -291,12 +306,13 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   categoryChip: {
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.two,
-    borderRadius: Spacing.two,
+    borderRadius: BorderRadii.small,
   },
   categoryText: {
     fontSize: 10,
+    fontWeight: '800',
   },
   listSection: {
     gap: Spacing.three,
@@ -310,7 +326,7 @@ const styles = StyleSheet.create({
   },
   merchantCard: {
     padding: Spacing.four,
-    borderRadius: Spacing.three,
+    borderRadius: BorderRadii.large,
     gap: Spacing.three,
   },
   cardHeader: {
@@ -321,7 +337,7 @@ const styles = StyleSheet.create({
   avatar: {
     width: 44,
     height: 44,
-    borderRadius: Spacing.two,
+    borderRadius: BorderRadii.medium,
   },
   headerDetails: {
     flex: 1,

@@ -12,6 +12,7 @@
     "crypto-browserify": "^3.12.0",
     "expo": "~56.0.4",
     "expo-constants": "~56.0.15",
+    "expo-dev-client": "~56.0.15",
     "expo-device": "~56.0.4",
     "expo-font": "~56.0.5",
     "expo-glass-effect": "~56.0.4",
@@ -46,11 +47,16 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "start": "expo start",
+    "start": "expo start --dev-client",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo start --android --dev-client",
+    "ios": "expo start --ios --dev-client",
+    "android:run": "expo run:android",
+    "ios:run": "expo run:ios",
+    "eas:build:android": "eas build --profile development --platform android",
+    "eas:build:ios": "eas build --profile development --platform ios",
     "web": "expo start --web",
+    "prebuild": "expo prebuild",
     "lint": "expo lint"
   },
   "private": true
