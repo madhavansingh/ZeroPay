@@ -1,7 +1,15 @@
-import { Suspense, lazy } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Suspense, lazy, useState, useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import BottomNav from './components/organisms/BottomNav';
+
+// Global Telemetry and UX controls
+import TelemetryBanner from './components/organisms/TelemetryBanner';
+import CommandPalette from './components/organisms/CommandPalette';
+import GlobalSearch from './components/organisms/GlobalSearch';
+import NotificationCenter from './components/organisms/NotificationCenter';
+import SystemHealthDrawer from './components/organisms/SystemHealthDrawer';
+
 
 // Auth + Onboarding (always eager — critical path)
 import SplashPage from './pages/auth/SplashPage';
@@ -73,6 +81,40 @@ function RequireOnboardingComplete({ children }: { children: React.ReactNode }) 
 
 export default function App() {
   const { isAuthenticated, isLoading, user } = useAuthStore();
+  const location = useLocation();
+
+  // Control states for global operational surfaces
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
+  const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
+  const [isSystemHealthOpen, setIsSystemHealthOpen] = useState(false);
+
+  // 1. Performance & Frontend Observability: Route transition timing tracker
+  useEffect(() => {
+    const start = performance.now();
+    return () => {
+      const end = performance.now();
+      const duration = (end - start).toFixed(1);
+      const timings = JSON.parse(localStorage.getItem('zeropay_route_timings') || '[]');
+      const newTiming = `${location.pathname} -> ${duration}ms`;
+      localStorage.setItem('zeropay_route_timings', JSON.stringify([newTiming, ...timings].slice(0, 10)));
+    };
+  }, [location.pathname]);
+
+  // 2. Global Keyboard Commands listener (Cmd+K / Ctrl+K and Cmd+J / Ctrl+J)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen(prev => !prev);
+      } else if ((e.metaKey || e.ctrlKey) && e.key === 'j') {
+        e.preventDefault();
+        setIsGlobalSearchOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const getHomeRoute = () => {
     if (!user) return '/auth';
@@ -95,6 +137,16 @@ export default function App() {
 
   return (
     <>
+      {/* Real-time telemetry banner at the top of authenticated pages */}
+      {isAuthenticated && (
+        <TelemetryBanner 
+          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+          onOpenGlobalSearch={() => setIsGlobalSearchOpen(true)}
+          onOpenNotificationCenter={() => setIsNotificationCenterOpen(true)}
+          onOpenSystemHealth={() => setIsSystemHealthOpen(true)}
+        />
+      )}
+
       <Suspense fallback={<PageLoader />}>
         <Routes>
           {/* Root redirect */}
@@ -140,6 +192,28 @@ export default function App() {
 
       {/* Global bottom nav */}
       {isAuthenticated && <BottomNav />}
+
+      {/* Overlays & Drawers */}
+      {isAuthenticated && (
+        <>
+          <CommandPalette 
+            isOpen={isCommandPaletteOpen} 
+            onClose={() => setIsCommandPaletteOpen(false)} 
+          />
+          <GlobalSearch 
+            isOpen={isGlobalSearchOpen} 
+            onClose={() => setIsGlobalSearchOpen(false)} 
+          />
+          <NotificationCenter 
+            isOpen={isNotificationCenterOpen} 
+            onClose={() => setIsNotificationCenterOpen(false)} 
+          />
+          <SystemHealthDrawer 
+            isOpen={isSystemHealthOpen} 
+            onClose={() => setIsSystemHealthOpen(false)} 
+          />
+        </>
+      )}
     </>
   );
 }
